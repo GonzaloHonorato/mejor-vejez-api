@@ -37,3 +37,6 @@ build/
 wallet/
 *.zip
 wallet.b64
+Wallet_*/
+Wallet_*
+.DS_Store

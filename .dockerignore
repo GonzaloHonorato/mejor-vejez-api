@@ -7,3 +7,5 @@ target/
 wallet/
 *.zip
 wallet.b64
+Wallet_*
+.DS_Store
