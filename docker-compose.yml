@@ -1,0 +1,45 @@
+# La API. La base NO se define acá: es una Oracle Autonomous DB externa a la
+# que se llega con el wallet. El front es otro despliegue (otra app de compose
+# en Dokploy) y le habla a esta API por su dominio público.
+services:
+  mejor-vejez-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      # ── Oracle (obligatorias) ────────────────────────────────────────────
+      # Sin valor por defecto a propósito: el compose se niega a levantar sin
+      # ellas en vez de arrancar una API que responde 500.
+      ORACLE_TNS_ALIAS: ${ORACLE_TNS_ALIAS:?falta ORACLE_TNS_ALIAS}
+      ORACLE_USERNAME: ${ORACLE_USERNAME:?falta ORACLE_USERNAME}
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:?falta ORACLE_PASSWORD}
+      ORACLE_WALLET_BASE64: ${ORACLE_WALLET_BASE64:?falta ORACLE_WALLET_BASE64}
+      # ── Firebase (obligatoria) ───────────────────────────────────────────
+      # Sólo el Project ID: con él se valida emisor y audiencia del token.
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?falta FIREBASE_PROJECT_ID}
+      # ── Opcionales ───────────────────────────────────────────────────────
+      # OJO: Compose sólo pasa al contenedor lo que está LISTADO acá. Ponerla
+      # en el panel de Dokploy sin esta línea no hace nada.
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://mejor-vejez-app.adndigital.cl}
+      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-update}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+    expose:
+      - "8080"
+    healthcheck:
+      # /api/health responde 200 aunque Oracle esté caída (el estado de la BD
+      # va en el cuerpo): una caída de la BD no debe reiniciar el contenedor.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - dokploy-network
+    # Dominio: pestaña Domains de Dokploy → servicio `mejor-vejez-api`,
+    # puerto 8080, host mejor-vejez-api.adndigital.cl, HTTPS con Let's Encrypt.
+
+networks:
+  dokploy-network:
+    external: true
