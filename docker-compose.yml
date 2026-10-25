@@ -23,14 +23,17 @@ services:
       # OJO: Compose sólo pasa al contenedor lo que está LISTADO acá. Ponerla
       # en el panel de Dokploy sin esta línea no hace nada.
       CORS_ORIGINS: ${CORS_ORIGINS:-https://mejor-vejez-app.adndigital.cl}
-      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-update}
+      JPA_DDL_AUTO: ${JPA_DDL_AUTO:-validate}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
     expose:
       - "8080"
     healthcheck:
-      # /api/health responde 200 aunque Oracle esté caída (el estado de la BD
+      # /api/salud responde 200 aunque Oracle esté caída (el estado de la BD
       # va en el cuerpo): una caída de la BD no debe reiniciar el contenedor.
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      # Ojo: esto vale solo DESPUÉS de que el contenedor arrancó. Flyway corre
+      # al inicio, así que si Oracle no está disponible en ese momento la app
+      # ni siquiera levanta (no llega a exponer /api/salud).
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/salud"]
       interval: 30s
       timeout: 10s
       retries: 3

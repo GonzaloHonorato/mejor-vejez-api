@@ -1,4 +1,4 @@
-package cl.adndigital.mejorvejez.config;
+package cl.adndigital.mejorvejez.configuracion;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +17,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  */
 @Configuration
 @EnableWebSecurity
-public class SecurityConfig {
+public class ConfiguracionSeguridad {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
@@ -28,7 +28,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/salud").permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form.disable())

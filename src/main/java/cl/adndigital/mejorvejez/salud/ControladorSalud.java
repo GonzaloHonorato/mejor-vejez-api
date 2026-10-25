@@ -1,4 +1,4 @@
-package cl.adndigital.mejorvejez.health;
+package cl.adndigital.mejorvejez.salud;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,17 +10,17 @@ import org.springframework.web.bind.annotation.RestController;
  * cuando Oracle se cae, y el front igual puede mostrar si la BD está arriba.
  */
 @RestController
-@RequestMapping("/api/health")
-public class HealthController {
+@RequestMapping("/api/salud")
+public class ControladorSalud {
 
-    private final HealthService healthService;
+    private final ServicioSalud servicioSalud;
 
-    public HealthController(HealthService healthService) {
-        this.healthService = healthService;
+    public ControladorSalud(ServicioSalud servicioSalud) {
+        this.servicioSalud = servicioSalud;
     }
 
     @GetMapping
-    public HealthResponse health() {
-        return healthService.check();
+    public RespuestaSalud salud() {
+        return servicioSalud.verificar();
     }
 }

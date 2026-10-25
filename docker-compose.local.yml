@@ -1,0 +1,35 @@
+# Compose SOLO para desarrollo local: levanta un Oracle Free real en Docker
+# para correr la API en tu máquina SIN tocar la Oracle Autonomous DB (ADB) de
+# producción ni usar el wallet. No se usa en Dokploy (ver docker-compose.yml).
+#
+# Uso (con Colima):
+#   DOCKER_HOST="unix://$HOME/.colima/default/docker.sock" \
+#     docker compose -f docker-compose.local.yml up -d
+# Luego: ./mvnw spring-boot:run con las variables de .env.local.example
+# (ver sección "Desarrollo local" del README).
+services:
+  oracle-local:
+    image: gvenzl/oracle-free:23-slim-faststart
+    restart: unless-stopped
+    environment:
+      # Contraseña del usuario SYS/SYSTEM. Solo para desarrollo: no es secreta.
+      ORACLE_PASSWORD: oracle_local_dev
+      # Usuario de aplicación que crea la imagen al primer arranque, dueño del
+      # esquema que Flyway va a poblar (coincide con ORACLE_USERNAME de
+      # .env.local.example).
+      APP_USER: mejorvejez
+      APP_USER_PASSWORD: mejorvejez
+    ports:
+      # Solo en loopback: el Oracle local no queda expuesto a la red.
+      - "127.0.0.1:1521:1521"
+    volumes:
+      - oracle-local-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  oracle-local-data:

@@ -1,0 +1,106 @@
+-- =====================================================================
+-- V3__indices_y_triggers.sql
+-- Índices de consulta, índices únicos basados en función y triggers de
+-- inmutabilidad. Migración Flyway (origen: database/03_indices_y_triggers.sql).
+--
+-- Va después de V2: los índices UX_* que dependen de un estado leen el ID
+-- real desde CATALOGO_ESTADOS (no se asumen números fijos).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Índices de consulta
+-- ---------------------------------------------------------------------
+CREATE INDEX IX_USUARIO_ID_ESTADO            ON USUARIO(ID_ESTADO);
+CREATE INDEX IX_INTEGRANTE_USUARIO_ID_ESTADO ON INTEGRANTE_GRUPO(ID_USUARIO, ID_ESTADO);
+CREATE INDEX IX_INTEGRANTE_GRUPO_ID_ESTADO   ON INTEGRANTE_GRUPO(ID_GRUPO, ID_ESTADO);
+CREATE INDEX IX_PROPUESTA_GRUPO_ID_ESTADO    ON PROPUESTA_SUCESION(ID_GRUPO, ID_ESTADO);
+CREATE INDEX IX_ADULTO_GRUPO_ID_ESTADO       ON ADULTO_MAYOR(ID_GRUPO, ID_ESTADO);
+CREATE INDEX IX_CONTACTO_ADULTO_ID_ESTADO    ON CONTACTO_EMERGENCIA(ID_ADULTO_MAYOR, ID_ESTADO);
+CREATE INDEX IX_PLAN_ADULTO_ID_ESTADO        ON PLAN_MEDICAMENTOS(ID_ADULTO_MAYOR, ID_ESTADO);
+CREATE INDEX IX_DETALLE_PLAN_ID_ESTADO       ON DETALLE_PLAN(ID_PLAN, ID_ESTADO);
+CREATE INDEX IX_DETALLE_PLAN_TERMINO         ON DETALLE_PLAN(ID_ESTADO, FECHA_ESTIMADA_TERMINO);
+CREATE INDEX IX_EJECUCION_TIPO_FECHA         ON EJECUCION_PROCESO(TIPO_EJECUCION, FECHA_INICIO);
+CREATE INDEX IX_TAREA_GRUPO_HORARIO          ON TAREA_CUIDADO(ID_GRUPO, FECHA_HORARIO);
+CREATE INDEX IX_TAREA_ID_ESTADO_HORARIO      ON TAREA_CUIDADO(ID_ESTADO, FECHA_HORARIO);
+CREATE INDEX IX_TAREA_ADULTO_HORARIO         ON TAREA_CUIDADO(ID_ADULTO_MAYOR, FECHA_HORARIO);
+CREATE INDEX IX_OCURRENCIA_HORARIO_ID_ESTADO ON OCURRENCIA_PLANIFICADA(FECHA_HORARIO, ID_ESTADO);
+CREATE INDEX IX_HISTORIAL_TAREA_FECHA        ON HISTORIAL_ESTADO_TAREA(ID_TAREA, FECHA_CAMBIO);
+CREATE INDEX IX_ASIGNACION_TAREA_ID_ESTADO   ON ASIGNACION_TAREA(ID_TAREA, ID_ESTADO);
+CREATE INDEX IX_ASIGNACION_USUARIO_ID_ESTADO ON ASIGNACION_TAREA(ID_USUARIO_ASIGNADO, ID_ESTADO);
+CREATE INDEX IX_COMPRA_TAREA                 ON DETALLE_COMPRA_MEDICAMENTOS(ID_TAREA);
+CREATE INDEX IX_ALERTA_GRUPO_ID_ESTADO       ON ALERTA_CUIDADO(ID_GRUPO, ID_ESTADO, FECHA_DETECCION);
+CREATE INDEX IX_ALERTA_TAREA                 ON ALERTA_CUIDADO(ID_TAREA);
+CREATE INDEX IX_ALERTA_DETALLE_PLAN          ON ALERTA_CUIDADO(ID_DETALLE_PLAN, TIPO_ALERTA);
+CREATE INDEX IX_INTENTO_ALERTA_FECHA         ON INTENTO_NOTIFICACION(ID_ALERTA, FECHA_INTENTO);
+CREATE INDEX IX_TRASPASO_GRUPO_FECHA         ON TRASPASO_FAMILIAR(ID_GRUPO, FECHA_TRASPASO);
+CREATE INDEX IX_DETALLE_TRASPASO_REFERENCIA  ON DETALLE_TRASPASO(TIPO_ELEMENTO, ID_REFERENCIA);
+CREATE INDEX IX_AUDITORIA_ENTIDAD_FECHA      ON EVENTO_AUDITORIA(NOMBRE_SERVICIO, TIPO_ENTIDAD, ID_ENTIDAD, FECHA_EVENTO);
+CREATE INDEX IX_AUDITORIA_GRUPO_FECHA        ON EVENTO_AUDITORIA(ID_GRUPO, FECHA_EVENTO);
+
+-- ---------------------------------------------------------------------
+-- INC-19: catálogo global de medicamentos sin duplicados que solo difieran
+-- en mayúsculas o espacios.
+-- ---------------------------------------------------------------------
+CREATE UNIQUE INDEX UX_MEDICAMENTO_NORMALIZADO ON MEDICAMENTO
+  (UPPER(TRIM(NOMBRE)), ID_PRESENTACION, UPPER(TRIM(CONCENTRACION)));
+
+-- ---------------------------------------------------------------------
+-- Índices únicos basados en función que dependen de un estado.
+-- ---------------------------------------------------------------------
+DECLARE
+  FUNCTION id_estado(p_tabla VARCHAR2, p_campo VARCHAR2, p_codigo VARCHAR2) RETURN NUMBER IS
+    v_id CATALOGO_ESTADOS.ID_ESTADO%TYPE;
+  BEGIN
+    SELECT ID_ESTADO INTO v_id
+      FROM CATALOGO_ESTADOS
+     WHERE NOMBRE_TABLA = p_tabla AND NOMBRE_CAMPO = p_campo AND CODIGO_ESTADO = p_codigo;
+    RETURN v_id;
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      RAISE_APPLICATION_ERROR(-20001,
+        'Falta el estado ' || p_tabla || '/' || p_campo || '/' || p_codigo ||
+        ' en CATALOGO_ESTADOS. Falta aplicar V2__catalogos.sql.');
+  END;
+BEGIN
+  -- HU-03: un solo contacto principal activo por adulto mayor.
+  EXECUTE IMMEDIATE
+    'CREATE UNIQUE INDEX UX_CONTACTO_PRINCIPAL_ACTIVO ON CONTACTO_EMERGENCIA ' ||
+    '(CASE WHEN ES_PRINCIPAL = ''S'' AND ID_ESTADO = ' ||
+    id_estado('CONTACTO_EMERGENCIA', 'ESTADO', 'ACTIVO') ||
+    ' THEN ID_ADULTO_MAYOR END)';
+
+  -- INC-06 / HU-06: una sola asignación activa por tarea.
+  EXECUTE IMMEDIATE
+    'CREATE UNIQUE INDEX UX_ASIGNACION_ACTIVA ON ASIGNACION_TAREA ' ||
+    '(CASE WHEN ID_ESTADO = ' ||
+    id_estado('ASIGNACION_TAREA', 'ESTADO', 'ACTIVO') ||
+    ' THEN ID_TAREA END)';
+
+  -- INC-10 / HU-13: una sola propuesta de sucesión activa por grupo.
+  EXECUTE IMMEDIATE
+    'CREATE UNIQUE INDEX UX_PROPUESTA_ACTIVA_GRUPO ON PROPUESTA_SUCESION ' ||
+    '(CASE WHEN ID_ESTADO IN (' ||
+    id_estado('PROPUESTA_SUCESION', 'ESTADO', 'PENDIENTE') || ', ' ||
+    id_estado('PROPUESTA_SUCESION', 'ESTADO', 'ACEPTADA') ||
+    ') THEN ID_GRUPO END)';
+
+END;
+/
+
+-- ---------------------------------------------------------------------
+-- INC-11 / HU-12: auditoría e historial de tareas append-only.
+-- Bloquean UPDATE y DELETE incluso para el dueño del esquema.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_AUDITORIA_INMUTABLE
+  BEFORE UPDATE OR DELETE ON EVENTO_AUDITORIA
+BEGIN
+  RAISE_APPLICATION_ERROR(-20010, 'EVENTO_AUDITORIA es de solo inserción: no se puede modificar ni eliminar.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER TRG_HISTORIAL_TAREA_INMUTABLE
+  BEFORE UPDATE OR DELETE ON HISTORIAL_ESTADO_TAREA
+BEGIN
+  RAISE_APPLICATION_ERROR(-20011, 'HISTORIAL_ESTADO_TAREA es de solo inserción: no se puede modificar ni eliminar.');
+END;
+/
