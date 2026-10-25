@@ -26,6 +26,6 @@ class AplicacionArrancaTest {
     @Test
     void contextoLevantaConFlywayYValidate() {
         assertThat(entorno.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("3");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("4");
     }
 }
