@@ -60,7 +60,6 @@ public class ServicioUsuarioActual {
     private static final String ESTADO_ACTIVO = "ACTIVO";
     private static final int LARGO_MAXIMO_NOMBRE = 160;
     private static final String MENSAJE_CORREO_DE_OTRA_CUENTA = "El correo ya está asociado a otra cuenta";
-    private static final String MENSAJE_NO_AUTENTICADO = "Se requiere una sesión válida.";
 
     private final RepositorioUsuario repositorio;
     private final ServicioCatalogos servicioCatalogos;
@@ -202,7 +201,7 @@ public class ServicioUsuarioActual {
         Authentication autenticacion = SecurityContextHolder.getContext().getAuthentication();
         if (autenticacion == null || !(autenticacion.getPrincipal() instanceof Jwt jwt)
                 || jwt.getSubject() == null || jwt.getSubject().isBlank()) {
-            throw new ExcepcionNoAutenticado(MENSAJE_NO_AUTENTICADO);
+            throw new ExcepcionNoAutenticado(ExcepcionNoAutenticado.MENSAJE_SESION_INVALIDA);
         }
         return jwt;
     }

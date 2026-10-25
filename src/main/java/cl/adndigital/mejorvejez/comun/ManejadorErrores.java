@@ -2,6 +2,9 @@ package cl.adndigital.mejorvejez.comun;
 
 import java.util.List;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -55,12 +58,12 @@ public class ManejadorErrores {
 
     @ExceptionHandler(ExcepcionNoAutenticado.class)
     public ProblemDetail manejarNoAutenticado(ExcepcionNoAutenticado excepcion) {
-        return construirProblema(HttpStatus.UNAUTHORIZED, "No autenticado", excepcion.getMessage());
+        return construirProblema(HttpStatus.UNAUTHORIZED, ExcepcionNoAutenticado.TITULO, excepcion.getMessage());
     }
 
     @ExceptionHandler(ExcepcionAccesoDenegado.class)
     public ProblemDetail manejarAccesoDenegado(ExcepcionAccesoDenegado excepcion) {
-        return construirProblema(HttpStatus.FORBIDDEN, "Acceso denegado", excepcion.getMessage());
+        return construirProblema(HttpStatus.FORBIDDEN, ExcepcionAccesoDenegado.TITULO, excepcion.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -69,6 +72,23 @@ public class ManejadorErrores {
                 "La solicitud tiene uno o más campos inválidos.");
         List<ErrorCampo> errores = excepcion.getBindingResult().getFieldErrors().stream()
                 .map(error -> new ErrorCampo(error.getField(), mensajeDeCampo(error)))
+                .toList();
+        problema.setProperty("errores", errores);
+        return problema;
+    }
+
+    /**
+     * Violación de una anotación de validación ({@code @Min}, etc.) en un
+     * parámetro de método de un {@code @Validated} (p. ej. {@code
+     * @RequestParam}), distinta de {@link MethodArgumentNotValidException}
+     * (que valida el cuerpo con {@code @Valid}).
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail manejarViolacionDeRestriccion(ConstraintViolationException excepcion) {
+        ProblemDetail problema = construirProblema(HttpStatus.BAD_REQUEST, "Datos inválidos",
+                "La solicitud tiene uno o más parámetros inválidos.");
+        List<ErrorCampo> errores = excepcion.getConstraintViolations().stream()
+                .map(violacion -> new ErrorCampo(nombreDeParametro(violacion), violacion.getMessage()))
                 .toList();
         problema.setProperty("errores", errores);
         return problema;
@@ -157,6 +177,13 @@ public class ManejadorErrores {
 
     private String mensajeDeCampo(FieldError error) {
         return error.getDefaultMessage() != null ? error.getDefaultMessage() : "Valor inválido.";
+    }
+
+    /** Último tramo de la ruta de la violación (p. ej. {@code "listar.pagina"} → {@code "pagina"}). */
+    private String nombreDeParametro(ConstraintViolation<?> violacion) {
+        String ruta = violacion.getPropertyPath().toString();
+        int ultimoPunto = ruta.lastIndexOf('.');
+        return ultimoPunto >= 0 ? ruta.substring(ultimoPunto + 1) : ruta;
     }
 
     /** Un error de validación de un campo puntual del cuerpo de la solicitud. */

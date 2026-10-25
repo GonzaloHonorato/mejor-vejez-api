@@ -71,4 +71,40 @@ public class Usuario {
         this.idEstado = idEstado;
         this.fechaCreacion = fechaCreacion;
     }
+
+    /**
+     * Actualiza nombre y teléfono del perfil ({@code PATCH /api/yo}).
+     * {@code nombre} se guarda sin espacios en los extremos; {@code
+     * telefono} nulo o en blanco borra el teléfono guardado.
+     */
+    public void actualizarPerfil(String nombre, String telefono, OffsetDateTime fecha) {
+        this.nombre = nombre.trim();
+        this.telefono = (telefono == null || telefono.isBlank()) ? null : telefono.trim();
+        this.fechaActualizacion = fecha;
+    }
+
+    /**
+     * Actualiza nombre, teléfono y el rol de administrador desde la
+     * administración global de cuentas ({@code PATCH
+     * /api/usuarios/{idUsuario}}). Mismo tratamiento de nombre/teléfono que
+     * {@link #actualizarPerfil}; el correo no se edita acá tampoco.
+     */
+    public void actualizarDesdeAdministracion(String nombre, String telefono, boolean esAdministrador,
+            OffsetDateTime fecha) {
+        this.nombre = nombre.trim();
+        this.telefono = (telefono == null || telefono.isBlank()) ? null : telefono.trim();
+        this.esAdministrador = esAdministrador;
+        this.fechaActualizacion = fecha;
+    }
+
+    /**
+     * Cambia el estado global del usuario ({@code PUT
+     * /api/usuarios/{idUsuario}/estado}). No toca sus membresías de grupo
+     * (HU-01): el acceso a cada grupo lo decide {@code ServicioAutorizacion}
+     * por la membresía, no por este estado.
+     */
+    public void cambiarEstado(long idEstadoNuevo, OffsetDateTime fecha) {
+        this.idEstado = idEstadoNuevo;
+        this.fechaActualizacion = fecha;
+    }
 }

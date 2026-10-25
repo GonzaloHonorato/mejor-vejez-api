@@ -21,9 +21,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cl.adndigital.mejorvejez.configuracion.ConfiguracionCors;
 import cl.adndigital.mejorvejez.configuracion.ConfiguracionSeguridad;
+import cl.adndigital.mejorvejez.seguridad.ManejadorErroresSeguridad;
 
 @WebMvcTest(ControladorPruebaErrores.class)
-@Import({ConfiguracionSeguridad.class, ConfiguracionCors.class, ManejadorErrores.class})
+@Import({ConfiguracionSeguridad.class, ConfiguracionCors.class, ManejadorErrores.class, ManejadorErroresSeguridad.class})
 class ManejadorErroresTest {
 
     @Autowired
