@@ -1,6 +1,7 @@
 package cl.adndigital.mejorvejez.alertas;
 
 import java.sql.PreparedStatement;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,6 +52,19 @@ public class FixturaAlertas {
     public void cambiarEstadoAlerta(long idAlerta, String codigoEstado) {
         jdbcTemplate.update("UPDATE ALERTA_CUIDADO SET ID_ESTADO = ? WHERE ID_ALERTA = ?",
                 idEstado(CodigosAlertas.TABLA_ALERTA_CUIDADO, CodigosAlertas.CAMPO_ESTADO, codigoEstado), idAlerta);
+    }
+
+    /**
+     * Cierra la alerta indicada ({@code CERRADA}) con la {@code
+     * FECHA_REVISION} exacta dada, sin pasar por el servicio: lo usan las
+     * pruebas del panel familiar (Fase 6, Tarea 2) que necesitan controlar
+     * la ventana de "cerradas en los últimos N días".
+     */
+    public void cerrarAlertaConFecha(long idAlerta, OffsetDateTime fechaRevision) {
+        jdbcTemplate.update("UPDATE ALERTA_CUIDADO SET ID_ESTADO = ?, FECHA_REVISION = ? WHERE ID_ALERTA = ?",
+                idEstado(CodigosAlertas.TABLA_ALERTA_CUIDADO, CodigosAlertas.CAMPO_ESTADO,
+                        CodigosAlertas.ESTADO_ALERTA_CERRADA),
+                fechaRevision, idAlerta);
     }
 
     /** Inserta un INTENTO_NOTIFICACION de la alerta/usuario/canal/número indicados, con el estado de envío dado. */

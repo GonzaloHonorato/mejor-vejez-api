@@ -1,8 +1,8 @@
 package cl.adndigital.mejorvejez;
 
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.oracle.OracleContainer;
 
 /**
@@ -10,17 +10,27 @@ import org.testcontainers.oracle.OracleContainer;
  * Spring de la JVM (cada {@code @JdbcTest}/{@code @SpringBootTest} con
  * configuración distinta levanta su propio {@code ApplicationContext}; sin
  * compartir el contenedor, cada uno abría su propio Oracle y la VM de
- * Testcontainers se quedaba sin memoria). {@code @ServiceConnection}
- * reemplaza el datasource de application.properties (wallet/ADB), así que
- * ninguna prueba toca la base de producción.
+ * Testcontainers se quedaba sin memoria).
  *
- * <p>El contenedor se guarda en un campo {@code static final} e inicia una
- * sola vez por JVM. {@code @Bean(destroyMethod = "")} evita que Spring Boot
- * lo detenga cuando cierra un contexto (Testcontainers expone {@code close()}
- * como método de destrucción inferido, y pararía el contenedor compartido al
- * terminar el primer contexto, dejando sin base a los siguientes). Ryuk lo
- * elimina igual al terminar la JVM, así que no quedan contenedores
- * huérfanos.
+ * <p>Ronda de corrección 2 (Fase 6, Tarea 1): el contenedor NO se expone como
+ * {@code @Bean} (antes era {@code @Bean(destroyMethod = "") @ServiceConnection}).
+ * Cuando la caché de contextos de Spring Test expulsa un contexto para hacer
+ * sitio a uno nuevo, lo cierra; al cerrarlo, el {@code
+ * TestcontainersLifecycleBeanPostProcessor} de Spring Boot detiene cualquier
+ * bean {@code Startable} sin método de destrucción propio — exactamente lo
+ * que {@code destroyMethod = ""} dejaba sin método. Es decir: cada expulsión
+ * de la caché PARABA el contenedor compartido; el siguiente contexto en
+ * necesitarlo lo volvía a levantar en un puerto nuevo, y los contextos que
+ * seguían en caché quedaban apuntando al puerto viejo (de ahí {@code
+ * ORA-03113}/{@code ORA-12541}, no falta de memoria).
+ *
+ * <p>La corrección: en vez de un {@code @Bean}, un {@link
+ * DynamicPropertyRegistrar} registra directamente {@code
+ * spring.datasource.url}/{@code username}/{@code password}/{@code
+ * driver-class-name} apuntando al contenedor. Así ningún bean de Spring
+ * referencia al contenedor y ningún post-procesador de ciclo de vida lo
+ * toca: vive solo en el campo {@code static final} de esta clase y lo
+ * detiene Ryuk al terminar la JVM, nunca a mitad de la suite.
  *
  * <p>Las pruebas comparten esquema. {@code @JdbcTest} (p.ej.
  * {@code MigracionesFlywayTest}, {@code RestriccionesModeloTest}) hace
@@ -44,9 +54,13 @@ public class ConfiguracionTestcontainers {
         ORACLE_COMPARTIDO.start();
     }
 
-    @Bean(destroyMethod = "")
-    @ServiceConnection
-    OracleContainer oracle() {
-        return ORACLE_COMPARTIDO;
+    @Bean
+    DynamicPropertyRegistrar propiedadesOracle() {
+        return registry -> {
+            registry.add("spring.datasource.url", ORACLE_COMPARTIDO::getJdbcUrl);
+            registry.add("spring.datasource.username", ORACLE_COMPARTIDO::getUsername);
+            registry.add("spring.datasource.password", ORACLE_COMPARTIDO::getPassword);
+            registry.add("spring.datasource.driver-class-name", () -> "oracle.jdbc.OracleDriver");
+        };
     }
 }
