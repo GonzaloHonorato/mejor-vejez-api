@@ -49,6 +49,9 @@ public class RepositorioHistorialIntegrante {
                         AND (ps.ID_USUARIO_SALIENTE = :idUsuario OR ps.ID_USUARIO_CANDIDATO = :idUsuario))
                 OR EXISTS (SELECT 1 FROM EVENTO_AUDITORIA ea
                         WHERE ea.ID_GRUPO = :idGrupo AND ea.ID_USUARIO_ACTOR = :idUsuario)
+                OR EXISTS (SELECT 1 FROM HISTORIAL_ESTADO_TAREA h
+                        JOIN TAREA_CUIDADO th ON th.ID_TAREA = h.ID_TAREA
+                        WHERE th.ID_GRUPO = :idGrupo AND h.ID_USUARIO_CAMBIO = :idUsuario)
             THEN 1 ELSE 0 END
             FROM DUAL
             """;

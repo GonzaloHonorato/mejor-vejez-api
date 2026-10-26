@@ -30,7 +30,7 @@ import cl.adndigital.mejorvejez.catalogos.TipoCatalogo;
  * idempotente, sin estado parcial visible gracias a {@code volatile}).
  */
 @Component
-class CatalogoDiasSemana {
+public class CatalogoDiasSemana {
 
     private final ServicioCatalogos servicioCatalogos;
     private final CalculadoraTermino calculadoraTermino;
@@ -64,9 +64,10 @@ class CatalogoDiasSemana {
      * {@link DayOfWeek} de cada id que sea un día activo del catálogo. Los
      * ids desconocidos (p. ej. un día guardado que luego se desactivó en el
      * catálogo) se ignoran en vez de fallar: quien estima el término recibe
-     * solo los días que puede interpretar.
+     * solo los días que puede interpretar. Pública: la usa también el
+     * generador de tareas ({@code tareas.ProgramacionDetalle}).
      */
-    Set<DayOfWeek> diasDeSemanaConocidos(Collection<Long> idsDia) {
+    public Set<DayOfWeek> diasDeSemanaConocidos(Collection<Long> idsDia) {
         Map<Long, RespuestaOpcion> dias = dias();
         return idsDia.stream()
                 .map(dias::get)

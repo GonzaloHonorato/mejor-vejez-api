@@ -26,7 +26,28 @@ public final class DetallesAuditoria {
      * (incluido {@code null}).
      */
     public static Map<String, Object> conTrazabilidad(ContextoGrupo contexto, Map<String, Object> extra) {
-        if (contexto.rol() != null) {
+        return conTrazabilidad(esAccesoAdministrador(contexto), extra);
+    }
+
+    /**
+     * {@code true} si el actor mutó como administrador sin membresía en el
+     * grupo ({@code contexto.rol() == null}): la misma regla de {@link
+     * #conTrazabilidad(ContextoGrupo, Map)}, para quien deba transportarla
+     * (p. ej. en un evento de dominio) y auditar después sin el contexto.
+     */
+    public static boolean esAccesoAdministrador(ContextoGrupo contexto) {
+        return contexto.rol() == null;
+    }
+
+    /**
+     * Igual que {@link #conTrazabilidad(ContextoGrupo, Map)}, pero con la
+     * regla ya resuelta ({@link #esAccesoAdministrador}): si {@code
+     * accesoAdministrador} es {@code true}, agrega {@code
+     * "accesoAdministrador": true} a una copia de {@code extra}; si no,
+     * devuelve {@code extra} tal cual (incluido {@code null}).
+     */
+    public static Map<String, Object> conTrazabilidad(boolean accesoAdministrador, Map<String, Object> extra) {
+        if (!accesoAdministrador) {
             return extra;
         }
         Map<String, Object> conTrazabilidad = extra == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extra);

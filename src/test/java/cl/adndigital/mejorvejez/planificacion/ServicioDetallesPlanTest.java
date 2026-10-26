@@ -597,9 +597,9 @@ class ServicioDetallesPlanTest {
     void enPlanInactivoSePuedeDesactivarReactivarYEliminarUnDetalle() {
         Escenario e = escenario();
         RespuestaDetallePlan uno = servicio.crear(e.idGrupo, e.idPlan,
-                new Datos(fixturaPlanes.crearMedicamento("Nitrofurantoina")).solicitud());
+                fueraDeLaVentana(new Datos(fixturaPlanes.crearMedicamento("Nitrofurantoina"))).solicitud());
         RespuestaDetallePlan dos = servicio.crear(e.idGrupo, e.idPlan,
-                new Datos(fixturaPlanes.crearMedicamento("Cefadroxilo")).solicitud());
+                fueraDeLaVentana(new Datos(fixturaPlanes.crearMedicamento("Cefadroxilo"))).solicitud());
         servicioPlanes.desactivar(e.idGrupo, e.idPlan);
 
         assertThat(servicio.desactivar(e.idGrupo, e.idPlan, uno.idDetallePlan()).idEstado())
@@ -619,6 +619,11 @@ class ServicioDetallesPlanTest {
 
     @Test
     void cambiarHorarioNoModificaTareasExistentes() {
+        // Desde F4 el recálculo (regla 8) sí cancela o ajusta las tareas
+        // futuras PENDIENTE, pero solo las que llegó a crear el generador (las
+        // que tienen una ocurrencia TAREA_CREADA del detalle; ver
+        // tareas.ServicioRecalculoTareasTest). Estas tareas de fixtura no
+        // tienen ocurrencia, así que siguen intactas.
         Escenario e = escenario();
         Datos datos = new Datos(fixturaPlanes.crearMedicamento("Metamizol"));
         RespuestaDetallePlan creado = servicio.crear(e.idGrupo, e.idPlan, datos.solicitud());
@@ -641,7 +646,7 @@ class ServicioDetallesPlanTest {
     void eliminarDetalleConTareaDevuelve422() {
         Escenario e = escenario();
         RespuestaDetallePlan creado = servicio.crear(e.idGrupo, e.idPlan,
-                new Datos(fixturaPlanes.crearMedicamento("Morfina")).solicitud());
+                fueraDeLaVentana(new Datos(fixturaPlanes.crearMedicamento("Morfina"))).solicitud());
         fixturaPlanes.crearTareaDeMedicamento(e.idGrupo, e.idAdulto, creado.idDetallePlan(),
                 HOY.atTime(8, 0).atZone(ZonaNegocio.ZONA).toOffsetDateTime());
 
@@ -655,7 +660,7 @@ class ServicioDetallesPlanTest {
     void eliminarDetalleSinReferenciasLoBorraConSusDiasYHoras() {
         Escenario e = escenario();
         RespuestaDetallePlan creado = servicio.crear(e.idGrupo, e.idPlan,
-                new Datos(fixturaPlanes.crearMedicamento("Captopril")).solicitud());
+                fueraDeLaVentana(new Datos(fixturaPlanes.crearMedicamento("Captopril"))).solicitud());
 
         servicio.eliminar(e.idGrupo, e.idPlan, creado.idDetallePlan());
 
@@ -669,7 +674,7 @@ class ServicioDetallesPlanTest {
     void eliminarDetalleDesactivadoAlgunaVezDevuelve422() {
         Escenario e = escenario();
         RespuestaDetallePlan creado = servicio.crear(e.idGrupo, e.idPlan,
-                new Datos(fixturaPlanes.crearMedicamento("Codeina")).solicitud());
+                fueraDeLaVentana(new Datos(fixturaPlanes.crearMedicamento("Codeina"))).solicitud());
         servicio.desactivar(e.idGrupo, e.idPlan, creado.idDetallePlan());
         servicio.reactivar(e.idGrupo, e.idPlan, creado.idDetallePlan());
 
@@ -785,6 +790,19 @@ class ServicioDetallesPlanTest {
     }
 
     private record Escenario(long idCoordinador, long idGrupo, long idAdulto, long idPlan) {
+    }
+
+    /**
+     * Regla 13 de la Fase 4: desde F4, crear (o reactivar) un detalle genera
+     * al instante las tareas de la ventana, y esas tareas son referencias que
+     * impiden eliminarlo. Las pruebas que eliminan un detalle creado por el
+     * servicio, o que afirman qué referencia produce el 422, lo crean con
+     * {@code fechaInicio} = hoy + 30 días, fuera de la ventana de 7 días, para
+     * no depender de qué días y horas caen dentro de ella.
+     */
+    private Datos fueraDeLaVentana(Datos datos) {
+        datos.fechaInicio = HOY.plusDays(30);
+        return datos;
     }
 
     /** LUNES, MIERCOLES y VIERNES a las 08:00 y 20:00, dosis 1. */

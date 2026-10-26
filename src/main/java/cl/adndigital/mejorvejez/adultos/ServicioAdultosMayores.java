@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,8 +41,14 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  * designación y traspaso del principal son de la Tarea 3.
  *
  * <p><b>Bajas.</b> Desactivar/reactivar son siempre lógicas y no tocan
- * contactos ni otras tablas. Eliminar es físico, y solo si el adulto no tiene
- * contactos, historial ni otras referencias ({@code
+ * contactos. Desde F4 publican {@link EventoCambioEstadoAdulto} después de
+ * guardar y antes de auditar: el recálculo síncrono de F4 ({@code
+ * tareas.ServicioRecalculoTareas}, regla 8) cancela las tareas futuras
+ * PENDIENTE de sus planes al desactivarlo y las regenera al reactivarlo, en
+ * esta misma transacción (si falla, el cambio se revierte).
+ *
+ * <p>Eliminar es físico, y solo si el adulto no tiene contactos, historial
+ * ni otras referencias ({@code
  * RepositorioHistorialAdulto#adultoTieneReferencias}); si las tiene, debe
  * desactivarse en su lugar.
  *
@@ -89,18 +96,20 @@ public class ServicioAdultosMayores {
     private final ServicioAutorizacion servicioAutorizacion;
     private final ServicioCatalogos servicioCatalogos;
     private final ServicioAuditoria servicioAuditoria;
+    private final ApplicationEventPublisher publicadorEventos;
     private final Clock reloj;
 
     public ServicioAdultosMayores(RepositorioAdultoMayor repositorioAdulto,
             RepositorioContactoEmergencia repositorioContacto, RepositorioHistorialAdulto repositorioHistorial,
             ServicioAutorizacion servicioAutorizacion, ServicioCatalogos servicioCatalogos,
-            ServicioAuditoria servicioAuditoria, Clock reloj) {
+            ServicioAuditoria servicioAuditoria, ApplicationEventPublisher publicadorEventos, Clock reloj) {
         this.repositorioAdulto = repositorioAdulto;
         this.repositorioContacto = repositorioContacto;
         this.repositorioHistorial = repositorioHistorial;
         this.servicioAutorizacion = servicioAutorizacion;
         this.servicioCatalogos = servicioCatalogos;
         this.servicioAuditoria = servicioAuditoria;
+        this.publicadorEventos = publicadorEventos;
         this.reloj = reloj;
     }
 
@@ -224,6 +233,7 @@ public class ServicioAdultosMayores {
 
         adulto.cambiarEstado(idEstadoInactivo, contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
         AdultoMayor guardado = repositorioAdulto.save(adulto);
+        publicarCambioEstado(contexto, idGrupo, idAdulto);
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD,
                 String.valueOf(guardado.getIdAdultoMayor()), idGrupo, contexto.usuario().getIdUsuario(),
@@ -251,6 +261,7 @@ public class ServicioAdultosMayores {
 
         adulto.cambiarEstado(idEstadoActivo, contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
         AdultoMayor guardado = repositorioAdulto.save(adulto);
+        publicarCambioEstado(contexto, idGrupo, idAdulto);
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD,
                 String.valueOf(guardado.getIdAdultoMayor()), idGrupo, contexto.usuario().getIdUsuario(),
@@ -281,6 +292,12 @@ public class ServicioAdultosMayores {
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD, String.valueOf(idAdulto), idGrupo,
                 contexto.usuario().getIdUsuario(), ACCION_ELIMINAR, ResultadoAuditoria.EXITO,
                 detalles(contexto, null)));
+    }
+
+    /** Recálculo síncrono de las tareas de los planes del adulto (F4, regla 8), en esta transacción. */
+    private void publicarCambioEstado(ContextoGrupo contexto, long idGrupo, long idAdulto) {
+        publicadorEventos.publishEvent(new EventoCambioEstadoAdulto(idGrupo, idAdulto,
+                contexto.usuario().getIdUsuario(), DetallesAuditoria.esAccesoAdministrador(contexto)));
     }
 
     /** @throws ExcepcionNoEncontrado el adulto no existe o no pertenece al grupo. */

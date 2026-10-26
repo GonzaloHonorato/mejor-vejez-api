@@ -27,6 +27,8 @@ import cl.adndigital.mejorvejez.comun.ExcepcionAccesoDenegado;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
+import cl.adndigital.mejorvejez.modelo.FixturaModelo;
+import cl.adndigital.mejorvejez.tareas.FixturaTareas;
 
 /**
  * Prueba {@link ServicioIntegrantes} contra Oracle real (Testcontainers). Los
@@ -542,6 +544,66 @@ class ServicioIntegrantesTest {
         assertThat(cantidadFilas).isEqualTo(1);
     }
 
+    /**
+     * Tarea 6 de la Fase 4 (HU-07): un cambio de estado de una tarea de
+     * cuidado del grupo, hecho por el colaborador, también cuenta como
+     * historial de uso (EXISTS agregado a {@link RepositorioHistorialIntegrante}
+     * sobre {@code HISTORIAL_ESTADO_TAREA} join {@code TAREA_CUIDADO}).
+     */
+    @Test
+    void eliminarConHistorialDeCambioDeEstadoDeTareaDevuelve422() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+
+        long idColaborador = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);
+        long idIntegranteColaborador = fixtura.agregarIntegrante(idGrupo, idColaborador, "COLABORADOR", "ACTIVO");
+        FixturaModelo fixturaModelo = new FixturaModelo(jdbcTemplate);
+        long idAdulto = fixturaModelo.crearAdulto(idGrupo, idCoordinador);
+        long idTarea = fixturaModelo.crearTareaManual(idGrupo, idAdulto);
+        insertarHistorialEstadoTarea(idTarea, idColaborador);
+        autenticar(uidCoordinador);
+
+        assertThatThrownBy(() -> servicio.eliminar(idGrupo, idIntegranteColaborador))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("La membresía tiene historial; desactívala en su lugar");
+
+        Long cantidadFilas = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INTEGRANTE_GRUPO WHERE ID_INTEGRANTE = ?", Long.class, idIntegranteColaborador);
+        assertThat(cantidadFilas).isEqualTo(1);
+    }
+
+    /**
+     * Revisión final de F4: un colaborador al que el coordinador le asignó
+     * una tarea, aunque nunca haya cambiado un estado, tiene historial
+     * ({@code EXISTS} sobre {@code ASIGNACION_TAREA} por asignado o asignador
+     * en {@link RepositorioHistorialIntegrante}) y no se elimina físicamente.
+     */
+    @Test
+    void eliminarColaboradorConTareaAsignadaDevuelve422() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+
+        long idColaborador = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);
+        long idIntegranteColaborador = fixtura.agregarIntegrante(idGrupo, idColaborador, "COLABORADOR", "ACTIVO");
+        FixturaModelo fixturaModelo = new FixturaModelo(jdbcTemplate);
+        long idAdulto = fixturaModelo.crearAdulto(idGrupo, idCoordinador);
+        long idTarea = fixturaModelo.crearTareaManual(idGrupo, idAdulto);
+        new FixturaTareas(jdbcTemplate).crearAsignacion(idTarea, idGrupo, idColaborador, idCoordinador);
+        autenticar(uidCoordinador);
+
+        assertThatThrownBy(() -> servicio.eliminar(idGrupo, idIntegranteColaborador))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("La membresía tiene historial; desactívala en su lugar");
+
+        Long cantidadFilas = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INTEGRANTE_GRUPO WHERE ID_INTEGRANTE = ?", Long.class, idIntegranteColaborador);
+        assertThat(cantidadFilas).isEqualTo(1);
+    }
+
     @Test
     void integranteDeOtroGrupoDevuelve404() {
         String uidCoordinadorA = FixturaGrupos.uidUnico();
@@ -557,6 +619,14 @@ class ServicioIntegrantesTest {
         assertThatThrownBy(() -> servicio.desactivar(idGrupoA, idIntegranteB))
                 .isInstanceOf(ExcepcionNoEncontrado.class)
                 .hasMessage("El integrante no existe");
+    }
+
+    private void insertarHistorialEstadoTarea(long idTarea, long idUsuario) {
+        long idEstadoNuevo = idEstado("TAREA_CUIDADO", "ESTADO", "EN_CURSO");
+        jdbcTemplate.update(
+                "INSERT INTO HISTORIAL_ESTADO_TAREA (ID_TAREA, ID_ESTADO_NUEVO, ID_USUARIO_CAMBIO, FECHA_CAMBIO) "
+                        + "VALUES (?, ?, ?, SYSTIMESTAMP)",
+                idTarea, idEstadoNuevo, idUsuario);
     }
 
     private void insertarEventoHistorial(long idGrupo, long idUsuario) {

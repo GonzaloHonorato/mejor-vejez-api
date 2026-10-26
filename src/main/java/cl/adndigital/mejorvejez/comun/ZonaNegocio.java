@@ -1,5 +1,6 @@
 package cl.adndigital.mejorvejez.comun;
 
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
 /**
@@ -10,6 +11,16 @@ import java.time.ZoneId;
 public final class ZonaNegocio {
 
     public static final ZoneId ZONA = ZoneId.of("America/Santiago");
+
+    /**
+     * El mismo instante expresado con el offset que tiene {@link #ZONA} en
+     * ese momento (−03:00 o −04:00). Lo usan las respuestas para que todos
+     * los instantes salgan con el offset de Santiago, sin importar el offset
+     * con que llegaron o se leyeron. {@code null} queda {@code null}.
+     */
+    public static OffsetDateTime enZona(OffsetDateTime instante) {
+        return instante == null ? null : instante.atZoneSameInstant(ZONA).toOffsetDateTime();
+    }
 
     private ZonaNegocio() {
     }

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,9 +47,17 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  *
  * <p><b>Horario.</b> {@link ValidadorHorario} valida el {@code HORARIO_JSON}
  * y lo expande; se guardan solo las horas ({@code DETALLE_PLAN_HORARIO}, una
- * fila por hora, D3). Cambiar horario o días NO toca tareas, ocurrencias ni
- * alertas ya generadas: F3 no las modifica (F4 aplicará los cambios solo a
- * las ocurrencias futuras).
+ * fila por hora, D3).
+ *
+ * <p><b>Tareas (F4).</b> {@code crear}, {@code actualizar} (solo si guardó
+ * cambios), {@code desactivar} y {@code reactivar} publican {@link
+ * EventoCambioPlanificacion} después de guardar y antes de auditar: el
+ * recálculo síncrono de F4 ({@code tareas.ServicioRecalculoTareas}, regla 8)
+ * cancela las tareas futuras PENDIENTE que ya no corresponden, ajusta el
+ * texto de las que siguen y genera las que faltan, en esta misma
+ * transacción (si falla, el cambio se revierte). Las tareas pasadas, en
+ * curso o finalizadas no se tocan. {@code actualizarCantidad} y {@code
+ * eliminar} no publican.
  *
  * <p><b>Término.</b> En {@code AUTOMATICO} la fecha enviada se ignora y se
  * recalcula en cada alta, actualización y cambio de cantidad con {@link
@@ -100,6 +109,7 @@ public class ServicioDetallesPlan {
     private final ValidadorHorario validadorHorario;
     private final CalculadoraTermino calculadoraTermino;
     private final CatalogoDiasSemana catalogoDias;
+    private final ApplicationEventPublisher publicadorEventos;
     private final Clock reloj;
 
     public ServicioDetallesPlan(RepositorioPlanMedicamentos repositorioPlan, RepositorioDetallePlan repositorioDetalle,
@@ -107,7 +117,7 @@ public class ServicioDetallesPlan {
             ServicioMedicamentos servicioMedicamentos, ServicioAutorizacion servicioAutorizacion,
             ServicioCatalogos servicioCatalogos, ServicioAuditoria servicioAuditoria,
             ValidadorHorario validadorHorario, CalculadoraTermino calculadoraTermino,
-            CatalogoDiasSemana catalogoDias, Clock reloj) {
+            CatalogoDiasSemana catalogoDias, ApplicationEventPublisher publicadorEventos, Clock reloj) {
         this.repositorioPlan = repositorioPlan;
         this.repositorioDetalle = repositorioDetalle;
         this.repositorioHistorial = repositorioHistorial;
@@ -119,6 +129,7 @@ public class ServicioDetallesPlan {
         this.validadorHorario = validadorHorario;
         this.calculadoraTermino = calculadoraTermino;
         this.catalogoDias = catalogoDias;
+        this.publicadorEventos = publicadorEventos;
         this.reloj = reloj;
     }
 
@@ -150,6 +161,7 @@ public class ServicioDetallesPlan {
         DetallePlan guardado = repositorioDetalle.save(detalle);
 
         tocarPlan(plan, contexto, ahora);
+        publicarCambio(contexto, idGrupo, idPlan, guardado.getIdDetallePlan());
         auditar(contexto, idGrupo, guardado.getIdDetallePlan(), idPlan, AccionesPlanificacion.AGREGAR_MEDICAMENTO_PLAN,
                 null);
 
@@ -204,6 +216,7 @@ public class ServicioDetallesPlan {
         DetallePlan guardado = repositorioDetalle.save(detalle);
 
         tocarPlan(plan, contexto, ahora);
+        publicarCambio(contexto, idGrupo, idPlan, idDetalle);
         auditar(contexto, idGrupo, idDetalle, idPlan, AccionesPlanificacion.ACTUALIZAR_MEDICAMENTO_PLAN,
                 Map.of("camposModificados", camposModificados));
 
@@ -333,6 +346,7 @@ public class ServicioDetallesPlan {
         DetallePlan guardado = repositorioDetalle.save(detalle);
 
         tocarPlan(plan, contexto, ahora);
+        publicarCambio(contexto, idGrupo, plan.getIdPlan(), guardado.getIdDetallePlan());
         auditar(contexto, idGrupo, guardado.getIdDetallePlan(), plan.getIdPlan(), accion, null);
 
         return RespuestaDetallePlan.desde(guardado, catalogoDias);
@@ -531,6 +545,15 @@ public class ServicioDetallesPlan {
             throw new ExcepcionNoEncontrado(MENSAJE_NO_EXISTE);
         }
         return detalle;
+    }
+
+    /**
+     * Recálculo síncrono de las tareas del detalle (F4, regla 8): el oyente
+     * corre en esta transacción, con el plan ya bloqueado.
+     */
+    private void publicarCambio(ContextoGrupo contexto, long idGrupo, long idPlan, long idDetalle) {
+        publicadorEventos.publishEvent(new EventoCambioPlanificacion(idGrupo, idPlan, List.of(idDetalle),
+                contexto.usuario().getIdUsuario(), DetallesAuditoria.esAccesoAdministrador(contexto)));
     }
 
     private void tocarPlan(PlanMedicamentos plan, ContextoGrupo contexto, OffsetDateTime ahora) {

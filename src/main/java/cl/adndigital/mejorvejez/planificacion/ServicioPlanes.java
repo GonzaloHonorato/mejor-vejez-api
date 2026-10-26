@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +55,14 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  * el plan no tiene historial ni otras referencias ({@code
  * RepositorioHistorialPlan#planTieneReferencias}); si las tiene, debe
  * desactivarse en su lugar.
+ *
+ * <p><b>Tareas (F4).</b> {@code actualizar} (solo si cambió la vigencia),
+ * {@code desactivar} y {@code reactivar} publican {@link
+ * EventoCambioPlanificacion} (todos los detalles) después de guardar y antes
+ * de auditar: el recálculo síncrono de F4 ({@code
+ * tareas.ServicioRecalculoTareas}, regla 8) cancela las tareas futuras
+ * PENDIENTE que ya no corresponden y genera las que faltan, en esta misma
+ * transacción (si falla, el cambio se revierte).
  *
  * <p><b>Sin N+1 al listar.</b> {@link #listar} resuelve {@code nombreAdulto}
  * (una consulta {@code findAllById} para todos los adultos de la página) y
@@ -106,12 +115,14 @@ public class ServicioPlanes {
     private final ServicioCatalogos servicioCatalogos;
     private final ServicioAuditoria servicioAuditoria;
     private final CatalogoDiasSemana catalogoDias;
+    private final ApplicationEventPublisher publicadorEventos;
     private final Clock reloj;
 
     public ServicioPlanes(RepositorioPlanMedicamentos repositorioPlan, RepositorioDetallePlan repositorioDetalle,
             RepositorioHistorialPlan repositorioHistorial, RepositorioAdultoMayor repositorioAdulto,
             ServicioAutorizacion servicioAutorizacion, ServicioCatalogos servicioCatalogos,
-            ServicioAuditoria servicioAuditoria, CatalogoDiasSemana catalogoDias, Clock reloj) {
+            ServicioAuditoria servicioAuditoria, CatalogoDiasSemana catalogoDias,
+            ApplicationEventPublisher publicadorEventos, Clock reloj) {
         this.repositorioPlan = repositorioPlan;
         this.repositorioDetalle = repositorioDetalle;
         this.repositorioHistorial = repositorioHistorial;
@@ -120,6 +131,7 @@ public class ServicioPlanes {
         this.servicioCatalogos = servicioCatalogos;
         this.servicioAuditoria = servicioAuditoria;
         this.catalogoDias = catalogoDias;
+        this.publicadorEventos = publicadorEventos;
         this.reloj = reloj;
     }
 
@@ -240,13 +252,18 @@ public class ServicioPlanes {
 
         // Solo si cambió la vigencia: renombrar no revisa los detalles (uno
         // que ya estuviera fuera no debe impedir corregir el nombre).
-        if (camposModificados.contains("vigenteDesde") || camposModificados.contains("vigenteHasta")) {
+        boolean cambiaVigencia = camposModificados.contains("vigenteDesde")
+                || camposModificados.contains("vigenteHasta");
+        if (cambiaVigencia) {
             validarDetallesDentroDeVigencia(idPlan, solicitud.vigenteDesde(), solicitud.vigenteHasta());
         }
 
         plan.actualizar(solicitud.nombrePlan(), solicitud.vigenteDesde(), solicitud.vigenteHasta(),
                 contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
         PlanMedicamentos guardado = repositorioPlan.save(plan);
+        if (cambiaVigencia) {
+            publicarCambio(contexto, idGrupo, idPlan);
+        }
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD,
                 String.valueOf(guardado.getIdPlan()), idGrupo, contexto.usuario().getIdUsuario(), ACCION_ACTUALIZAR,
@@ -274,6 +291,7 @@ public class ServicioPlanes {
 
         plan.cambiarEstado(idEstadoInactivo, contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
         PlanMedicamentos guardado = repositorioPlan.save(plan);
+        publicarCambio(contexto, idGrupo, idPlan);
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD,
                 String.valueOf(guardado.getIdPlan()), idGrupo, contexto.usuario().getIdUsuario(), ACCION_DESACTIVAR,
@@ -301,6 +319,7 @@ public class ServicioPlanes {
 
         plan.cambiarEstado(idEstadoActivo, contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
         PlanMedicamentos guardado = repositorioPlan.save(plan);
+        publicarCambio(contexto, idGrupo, idPlan);
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD,
                 String.valueOf(guardado.getIdPlan()), idGrupo, contexto.usuario().getIdUsuario(), ACCION_REACTIVAR,
@@ -337,6 +356,15 @@ public class ServicioPlanes {
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD, String.valueOf(idPlan), idGrupo,
                 contexto.usuario().getIdUsuario(), ACCION_ELIMINAR, ResultadoAuditoria.EXITO,
                 detalles(contexto, null)));
+    }
+
+    /**
+     * Recálculo síncrono de las tareas de todos los detalles del plan (F4,
+     * regla 8): el oyente corre en esta transacción, con el plan ya bloqueado.
+     */
+    private void publicarCambio(ContextoGrupo contexto, long idGrupo, long idPlan) {
+        publicadorEventos.publishEvent(new EventoCambioPlanificacion(idGrupo, idPlan, List.of(),
+                contexto.usuario().getIdUsuario(), DetallesAuditoria.esAccesoAdministrador(contexto)));
     }
 
     /** @throws ExcepcionNoEncontrado el plan no existe o no pertenece al grupo. */

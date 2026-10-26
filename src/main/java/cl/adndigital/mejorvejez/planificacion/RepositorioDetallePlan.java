@@ -11,6 +11,12 @@ public interface RepositorioDetallePlan extends JpaRepository<DetallePlan, Long>
     /** Detalles del plan (en cualquier estado), por id de inserción ({@code GET .../planes/{idPlan}/detalles}). */
     List<DetallePlan> findByIdPlanOrderByIdDetallePlan(long idPlan);
 
+    /**
+     * Detalles del plan en el estado indicado, por id de inserción: el
+     * generador de tareas (Tarea 3 de la Fase 4) recorre solo los ACTIVO.
+     */
+    List<DetallePlan> findByIdPlanAndIdEstadoOrderByIdDetallePlan(long idPlan, long idEstado);
+
     /** Cantidad de detalles del plan en el estado indicado (p. ej. cuántos quedan ACTIVOS). */
     long countByIdPlanAndIdEstado(long idPlan, long idEstado);
 
