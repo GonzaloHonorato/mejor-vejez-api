@@ -28,6 +28,9 @@ public class RepositorioHistorialIntegrante {
                         WHERE t.ID_GRUPO = :idGrupo AND t.ID_USUARIO_CONFIRMADOR = :idUsuario)
                 OR EXISTS (SELECT 1 FROM ALERTA_CUIDADO al
                         WHERE al.ID_GRUPO = :idGrupo AND al.ID_USUARIO_REVISOR = :idUsuario)
+                OR EXISTS (SELECT 1 FROM INTENTO_NOTIFICACION i
+                        JOIN ALERTA_CUIDADO ali ON ali.ID_ALERTA = i.ID_ALERTA
+                        WHERE ali.ID_GRUPO = :idGrupo AND i.ID_USUARIO_DESTINATARIO = :idUsuario)
                 OR EXISTS (SELECT 1 FROM ADULTO_MAYOR am
                         WHERE am.ID_GRUPO = :idGrupo
                         AND (am.ID_USUARIO_CREADOR = :idUsuario OR am.ID_USUARIO_ACTUALIZACION = :idUsuario))

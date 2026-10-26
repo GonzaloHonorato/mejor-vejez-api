@@ -13,6 +13,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import cl.adndigital.mejorvejez.comun.TextoAcotado;
+
 /**
  * Corrida de uno de los procesos programados del backend ({@code
  * EJECUCION_PROCESO}, INC-21): hoy {@code GENERACION_TAREAS} ({@link

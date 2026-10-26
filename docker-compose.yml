@@ -25,6 +25,20 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://mejor-vejez-app.adndigital.cl}
       JPA_DDL_AUTO: ${JPA_DDL_AUTO:-validate}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+      # ── Correo de alertas (Fase 5) ───────────────────────────────────────
+      # Si falta MAIL_HOST o MAIL_REMITENTE, cada envío queda como intento FALLIDO
+      # ("El envío de correo no está configurado."); la API igual arranca.
+      # Usuario y clave SMTP van SOLO en el panel de Dokploy, nunca acá.
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
+      MAIL_REMITENTE: ${MAIL_REMITENTE:-}
+      MAIL_TIMEOUT_MS: ${MAIL_TIMEOUT_MS:-10000}
+      # URL pública del front: arma el enlace a la alerta en el correo.
+      APP_URL: ${APP_URL:-https://mejor-vejez-app.adndigital.cl}
     expose:
       - "8080"
     healthcheck:

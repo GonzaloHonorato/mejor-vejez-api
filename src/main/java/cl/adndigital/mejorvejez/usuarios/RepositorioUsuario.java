@@ -57,4 +57,17 @@ public interface RepositorioUsuario extends JpaRepository<Usuario, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM Usuario u WHERE u.esAdministrador = true AND u.idEstado = :idEstado")
     List<Usuario> bloquearAdministradoresEn(@Param("idEstado") long idEstado);
+
+    /**
+     * Lee al usuario con {@code SELECT ... FOR UPDATE} (mismo patrón que
+     * {@code tareas.RepositorioTareaCuidado#bloquearPorId}): serializa los
+     * {@code PUT /api/yo/canales} del mismo usuario, para que dos envíos
+     * concurrentes no choquen con la PK compuesta de {@code
+     * CANAL_NOTIFICACION_USUARIO} (regla 17 de la Fase 5, ronda de
+     * corrección 1). Debe llamarse dentro de una transacción; el bloqueo
+     * dura hasta que esta termina.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM Usuario u WHERE u.idUsuario = :idUsuario")
+    Optional<Usuario> bloquearPorId(@Param("idUsuario") long idUsuario);
 }

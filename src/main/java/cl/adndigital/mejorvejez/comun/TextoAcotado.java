@@ -1,4 +1,4 @@
-package cl.adndigital.mejorvejez.tareas;
+package cl.adndigital.mejorvejez.comun;
 
 import java.nio.charset.StandardCharsets;
 
@@ -10,14 +10,19 @@ import java.nio.charset.StandardCharsets;
  * corte nunca parte un carácter multibyte ni un par sustituto: se descarta
  * entero el último punto de código que no cabe. Como cada carácter ocupa al
  * menos un byte, el resultado tiene también a lo más {@code n} caracteres.
+ *
+ * <p>Utilidad compartida entre módulos (p. ej. {@code tareas.EjecucionProceso}
+ * / {@code tareas.CreadorTareas} y {@code alertas.IntentoNotificacion}):
+ * antes existía una copia por módulo (package-private); se unificó aquí
+ * porque es el mismo algoritmo exacto, sin cambios de comportamiento.
  */
-final class TextoAcotado {
+public final class TextoAcotado {
 
     private TextoAcotado() {
     }
 
     /** {@code texto} si cabe en {@code maximoBytes} bytes UTF-8; si no, su prefijo más largo que cabe. */
-    static String truncarABytes(String texto, int maximoBytes) {
+    public static String truncarABytes(String texto, int maximoBytes) {
         if (texto == null || texto.length() * 3L <= maximoBytes
                 || texto.getBytes(StandardCharsets.UTF_8).length <= maximoBytes) {
             return texto;

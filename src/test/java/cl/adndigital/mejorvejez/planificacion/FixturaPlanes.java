@@ -99,6 +99,47 @@ public class FixturaPlanes {
     }
 
     /**
+     * Crea un DETALLE_PLAN del plan/medicamento indicados, ACTIVO, con la
+     * {@code FECHA_ESTIMADA_TERMINO} explícita dada (para las alertas de
+     * reposición de la Fase 5, que no pueden depender de {@code
+     * TRUNC(SYSDATE)}): mismos valores por defecto que {@link #crearDetalle}.
+     */
+    public long crearDetalleConTermino(long idPlan, long idMedicamento, LocalDate fechaEstimadaTermino) {
+        long idPresentacion = idOpcion("PRESENTACION_MEDICAMENTO", "COMPRIMIDO");
+        long idUnidadDosis = idOpcion("UNIDAD_DOSIS", "COMPRIMIDO");
+        long idDetalle = insertarYObtenerId(
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
+                        + "DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, FECHA_ESTIMADA_TERMINO, ID_ESTADO) "
+                        + "VALUES (?, ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?, ?)",
+                "ID_DETALLE_PLAN",
+                idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, idUnidadDosis, fechaEstimadaTermino,
+                idEstado("DETALLE_PLAN", "ACTIVO"));
+
+        long idLunes = idOpcion("DIA_SEMANA", "LUNES");
+        jdbcTemplate.update(
+                "INSERT INTO DETALLE_PLAN_DIA (ID_DETALLE_PLAN, ID_DIA_SEMANA) VALUES (?, ?)",
+                idDetalle, idLunes);
+        jdbcTemplate.update(
+                "INSERT INTO DETALLE_PLAN_HORARIO (ID_DETALLE_PLAN, HORA_ADMINISTRACION) "
+                        + "VALUES (?, TIMESTAMP '1970-01-01 08:00:00')",
+                idDetalle);
+
+        return idDetalle;
+    }
+
+    /** Cambia el estado del detalle indicado ({@code ACTIVO} | {@code INACTIVO}), sin pasar por el servicio. */
+    public void cambiarEstadoDetalle(long idDetalle, String estado) {
+        jdbcTemplate.update("UPDATE DETALLE_PLAN SET ID_ESTADO = ? WHERE ID_DETALLE_PLAN = ?",
+                idEstado("DETALLE_PLAN", estado), idDetalle);
+    }
+
+    /** Cambia la {@code FECHA_ESTIMADA_TERMINO} del detalle indicado, sin pasar por el servicio. */
+    public void cambiarTermino(long idDetalle, LocalDate fechaEstimadaTermino) {
+        jdbcTemplate.update("UPDATE DETALLE_PLAN SET FECHA_ESTIMADA_TERMINO = ? WHERE ID_DETALLE_PLAN = ?",
+                fechaEstimadaTermino, idDetalle);
+    }
+
+    /**
      * Crea una TAREA_CUIDADO de tipo MEDICAMENTOS para el detalle indicado
      * (según V1: {@code CLAVE_OCURRENCIA} e {@code ID_DETALLE_PLAN} son
      * obligatorios en ese tipo de tarea).

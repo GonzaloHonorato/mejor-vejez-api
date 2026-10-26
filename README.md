@@ -68,6 +68,14 @@ servicio. En un controller, el usuario sale de `@AuthenticationPrincipal Jwt jwt
 | `FIREBASE_PROJECT_ID` | sí | project ID de Firebase |
 | `CORS_ORIGINS` | no | orígenes separados por coma (def. `https://mejor-vejez-app.adndigital.cl`) |
 | `JPA_DDL_AUTO` | no | def. `validate`: el esquema lo crea Flyway (`src/main/resources/db/migration`) y Hibernate solo lo valida. Flyway corre al arrancar, así que la API **exige** la BD para levantar |
+| `MAIL_HOST` | no (sí para enviar correos) | servidor SMTP de las alertas. Vacío: cada envío queda como intento FALLIDO ("El envío de correo no está configurado.") |
+| `MAIL_PORT` | no | def. `587` |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | no | credenciales SMTP; solo en el panel de Dokploy, nunca en el repo |
+| `MAIL_SMTP_AUTH` | no | def. `true` |
+| `MAIL_STARTTLS` | no | def. `true` |
+| `MAIL_REMITENTE` | no (sí para enviar correos) | dirección `From` de los correos de alerta. Vacío: igual que sin `MAIL_HOST` |
+| `MAIL_TIMEOUT_MS` | no | def. `10000`: timeout SMTP de conexión, lectura y escritura (ms); un SMTP colgado termina en intento FALLIDO |
+| `APP_URL` | no | URL pública del front para el enlace del correo, p. ej. `https://mejor-vejez-app.adndigital.cl` (def. en el compose; la barra final se ignora) |
 
 ### Wallet en base64
 
@@ -118,6 +126,20 @@ base64 -i Wallet_MEJORVEJEZ.zip | tr -d '\n' | pbcopy
    ```
 
    Flyway crea el esquema (3 migraciones) en el Oracle local al arrancar.
+
+   **Correo (Fase 5):** levanta también `mailpit` (`docker-compose.local.yml`,
+   SMTP `127.0.0.1:1025`, bandeja web `http://127.0.0.1:8025`) con el mismo
+   comando `docker compose -f docker-compose.local.yml up -d` del paso 1, y
+   arranca la API con estas variables para que apunte a él:
+
+   ```sh
+   MAIL_HOST=localhost MAIL_PORT=1025 MAIL_SMTP_AUTH=false MAIL_STARTTLS=false \
+   MAIL_REMITENTE=alertas@mejorvejez.local ./mvnw spring-boot:run
+   ```
+
+   Si `MAIL_HOST` o `MAIL_REMITENTE` quedan vacíos (valor por defecto), la API
+   arranca igual: los intentos de correo quedan `FALLIDO` con un detalle de
+   error, sin tumbar el proceso.
 
 3. Datos demo (opcional), después de que Flyway haya corrido:
 

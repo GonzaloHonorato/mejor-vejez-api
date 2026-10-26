@@ -36,9 +36,18 @@ public class VerificadorVigencia {
     /** {@code true} si el plan, su adulto mayor y su grupo están ACTIVO. */
     public boolean planAdultoYGrupoActivos(PlanMedicamentos plan) {
         return plan.getIdEstado() == idActivo("PLAN_MEDICAMENTOS")
-                && repositorioAdultos.findById(plan.getIdAdultoMayor())
+                && adultoYGrupoActivos(plan.getIdAdultoMayor(), plan.getIdGrupo());
+    }
+
+    /**
+     * {@code true} si el adulto mayor y el grupo están ACTIVO. Lo usa también
+     * el detector de atrasos de F5 ({@code alertas.CreadorAlertas}) para las
+     * tareas que no son de un plan.
+     */
+    public boolean adultoYGrupoActivos(long idAdulto, long idGrupo) {
+        return repositorioAdultos.findById(idAdulto)
                         .filter(adulto -> adulto.getIdEstado() == idActivo("ADULTO_MAYOR")).isPresent()
-                && repositorioGrupos.findById(plan.getIdGrupo())
+                && repositorioGrupos.findById(idGrupo)
                         .filter(grupo -> grupo.getIdEstado() == idActivo("GRUPO_FAMILIAR")).isPresent();
     }
 

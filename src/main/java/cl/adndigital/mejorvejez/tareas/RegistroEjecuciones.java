@@ -42,7 +42,17 @@ public class RegistroEjecuciones {
     /** Registra una corrida nueva de {@code GENERACION_TAREAS}, {@code INICIADA}, y devuelve su id. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public long iniciar(OffsetDateTime inicio, OffsetDateTime fin) {
-        EjecucionProceso ejecucion = new EjecucionProceso(CodigosTareas.TIPO_EJECUCION_GENERACION, inicio, fin,
+        return iniciar(CodigosTareas.TIPO_EJECUCION_GENERACION, inicio, fin);
+    }
+
+    /**
+     * Registra una corrida nueva del tipo indicado ({@code GENERACION_TAREAS}
+     * | {@code DETECCION_ATRASOS} | {@code ALERTAS_PREVENTIVAS}, Fase 5),
+     * {@code INICIADA}, y devuelve su id.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public long iniciar(String tipoEjecucion, OffsetDateTime inicio, OffsetDateTime fin) {
+        EjecucionProceso ejecucion = new EjecucionProceso(tipoEjecucion, inicio, fin,
                 estadoEjecucion(CodigosTareas.ESTADO_EJECUCION_INICIADA), OffsetDateTime.now(reloj));
         return repositorioEjecuciones.save(ejecucion).getIdEjecucion();
     }

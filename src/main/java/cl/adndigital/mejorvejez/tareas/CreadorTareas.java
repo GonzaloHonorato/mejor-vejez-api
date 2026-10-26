@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cl.adndigital.mejorvejez.catalogos.RespuestaOpcion;
 import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
 import cl.adndigital.mejorvejez.catalogos.TipoCatalogo;
+import cl.adndigital.mejorvejez.comun.TextoAcotado;
 import cl.adndigital.mejorvejez.grupos.RepositorioIntegranteGrupo;
 import cl.adndigital.mejorvejez.planificacion.CatalogoDiasSemana;
 import cl.adndigital.mejorvejez.planificacion.DetallePlan;

@@ -31,5 +31,17 @@ services:
       retries: 10
       start_period: 60s
 
+  # Servidor SMTP de pruebas (Fase 5): atrapa todos los correos que envía la
+  # API en local, sin entregarlos de verdad. Bandeja web en
+  # http://127.0.0.1:8025. Levanta la API local con MAIL_HOST=localhost
+  # MAIL_PORT=1025 MAIL_SMTP_AUTH=false MAIL_STARTTLS=false (ver README).
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports:
+      # SMTP (loopback) y bandeja web, ambos solo locales.
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
 volumes:
   oracle-local-data:
