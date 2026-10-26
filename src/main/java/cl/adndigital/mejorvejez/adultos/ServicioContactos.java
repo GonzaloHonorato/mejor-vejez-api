@@ -13,6 +13,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cl.adndigital.mejorvejez.auditoria.DetallesAuditoria;
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;

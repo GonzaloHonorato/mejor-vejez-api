@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cl.adndigital.mejorvejez.auditoria.DetallesAuditoria;
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
@@ -66,11 +67,14 @@ public class ServicioAdultosMayores {
     private static final String ACCION_REACTIVAR = "REACTIVAR_ADULTO_MAYOR";
     private static final String ACCION_ELIMINAR = "ELIMINAR_ADULTO_MAYOR";
 
-    // Visibilidad de paquete: ServicioContactos (Tarea 3) reutiliza el mismo
-    // texto exacto en vez de duplicarlo, porque ambos mensajes describen el
-    // mismo adulto mayor (el de la URL), no un concepto propio de esta clase.
-    static final String MENSAJE_NO_EXISTE = "El adulto mayor no existe";
-    static final String MENSAJE_INACTIVO_NO_EDITABLE = "El adulto mayor está inactivo; reactívalo para modificarlo";
+    // Públicos (ampliado en la Tarea 4): ServicioContactos (Tarea 3) y
+    // planificacion.ServicioPlanes (Tarea 4) reutilizan el mismo texto exacto
+    // en vez de duplicarlo, porque los tres mensajes describen el mismo
+    // adulto mayor (el de la URL o el referenciado por el plan), no un
+    // concepto propio de esta clase.
+    public static final String MENSAJE_NO_EXISTE = "El adulto mayor no existe";
+    public static final String MENSAJE_INACTIVO_NO_EDITABLE =
+            "El adulto mayor está inactivo; reactívalo para modificarlo";
 
     private static final String MENSAJE_FECHA_FUTURA = "La fecha de nacimiento no puede ser futura";
     private static final String MENSAJE_CODIGO_DUPLICADO = "Ya existe un adulto mayor con ese código en el grupo";
