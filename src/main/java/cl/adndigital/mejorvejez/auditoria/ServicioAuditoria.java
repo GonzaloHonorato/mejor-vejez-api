@@ -2,10 +2,7 @@ package cl.adndigital.mejorvejez.auditoria;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
@@ -22,14 +19,13 @@ import tools.jackson.databind.json.JsonMapper;
  * (el trigger {@code TRG_AUDITORIA_INMUTABLE} impide modificarlos o
  * eliminarlos). El ID de correlación no lo recibe el llamador: lo toma del
  * MDC (clave {@link FiltroCorrelacion#CLAVE_MDC_ID_CORRELACION}), donde lo
- * deja {@code FiltroCorrelacion} por cada petición.
+ * deja {@code FiltroCorrelacion} por cada petición. Los detalles se filtran
+ * con {@link FiltroDatosSensibles} antes de serializarse (regla 12 de la
+ * Fase 7); el mismo filtro se vuelve a aplicar en la lectura (defensa en
+ * profundidad).
  */
 @Service
 public class ServicioAuditoria {
-
-    /** Fragmentos de clave (en minúsculas) que nunca se guardan en {@code DETALLES_JSON} (HU-12). */
-    private static final Set<String> FRAGMENTOS_CLAVE_SENSIBLE =
-            Set.of("token", "clave", "password", "secret", "authorization");
 
     private final RepositorioEventoAuditoria repositorio;
     private final ServicioCatalogos servicioCatalogos;
@@ -84,27 +80,6 @@ public class ServicioAuditoria {
         if (detalles == null) {
             return null;
         }
-        return jsonMapper.writeValueAsString(omitirClavesSensibles(detalles));
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> omitirClavesSensibles(Map<String, Object> origen) {
-        Map<String, Object> filtrado = new LinkedHashMap<>();
-        origen.forEach((clave, valor) -> {
-            if (esClaveSensible(clave)) {
-                return;
-            }
-            if (valor instanceof Map<?, ?> mapaAnidado) {
-                filtrado.put(clave, omitirClavesSensibles((Map<String, Object>) mapaAnidado));
-            } else {
-                filtrado.put(clave, valor);
-            }
-        });
-        return filtrado;
-    }
-
-    private boolean esClaveSensible(String clave) {
-        String claveEnMinusculas = clave.toLowerCase(Locale.ROOT);
-        return FRAGMENTOS_CLAVE_SENSIBLE.stream().anyMatch(claveEnMinusculas::contains);
+        return jsonMapper.writeValueAsString(FiltroDatosSensibles.filtrar(detalles));
     }
 }

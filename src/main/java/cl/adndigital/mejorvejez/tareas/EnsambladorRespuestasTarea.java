@@ -176,8 +176,13 @@ public class EnsambladorRespuestasTarea {
                 tarea.getFechaConfirmacion(), tarea.getMotivoCancelacion(), compra, cita);
     }
 
-    /** Regla 12 de la Fase 4: {@code PENDIENTE} o {@code EN_CURSO} y {@code ahora > fechaHorario + minutosTolerancia}. */
-    private boolean estaAtrasada(TareaCuidado tarea, long idPendiente, long idEnCurso, OffsetDateTime ahora) {
+    /**
+     * Regla 12 de la Fase 4: {@code PENDIENTE} o {@code EN_CURSO} y {@code ahora
+     * > fechaHorario + minutosTolerancia}. Pública (ronda de corrección 1 de
+     * la Fase 7, Tarea 2) para que {@code relevos.ServicioRelevos} la
+     * reutilice al armar el resumen de un relevo, sin duplicar la regla.
+     */
+    public boolean estaAtrasada(TareaCuidado tarea, long idPendiente, long idEnCurso, OffsetDateTime ahora) {
         boolean enEstadoAtrasable = tarea.getIdEstado() == idPendiente || tarea.getIdEstado() == idEnCurso;
         if (!enEstadoAtrasable) {
             return false;
