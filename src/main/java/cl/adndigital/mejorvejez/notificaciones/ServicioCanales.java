@@ -14,6 +14,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,14 +30,20 @@ import cl.adndigital.mejorvejez.usuarios.Usuario;
  * Canales de notificación del usuario autenticado ({@code GET}/{@code PUT
  * /api/yo/canales}, regla 17 de la Fase 5) y resolución en lote de los
  * canales operativos de un conjunto de usuarios (regla 8, consumido por
- * {@code alertas} al enviar notificaciones).
+ * {@code interno.ServicioReservaIntentos} al reservar los intentos de una
+ * alerta).
  *
- * <p>{@code CORREO} siempre tiene un canal operativo: si el usuario no
- * configuró una fila propia, se usa el {@code USUARIO.EMAIL} de su cuenta,
- * habilitado (regla 8). Por eso un usuario nunca puede quedar, tras un
- * {@code PUT}, sin ningún canal operativo: para lograrlo tendría que
- * deshabilitar explícitamente {@code CORREO} sin que ningún otro canal esté
- * disponible, lo que la validación rechaza (último chequeo de la regla 17).
+ * <p>{@code CORREO} siempre tiene un canal operativo (Fase 9: el Core ya no
+ * envía correos, lo hace el microservicio de Alertas, que marca FALLIDO un
+ * intento si no tiene SMTP configurado): si el usuario no configuró una
+ * fila propia, se usa el {@code USUARIO.EMAIL} de su cuenta, habilitado
+ * (regla 8). Por eso un usuario nunca puede quedar, tras un {@code PUT}, sin
+ * ningún canal operativo: para lograrlo tendría que deshabilitar
+ * explícitamente {@code CORREO} sin que ningún otro canal esté disponible,
+ * lo que la validación rechaza (último chequeo de la regla 17). {@code
+ * WHATSAPP} sigue gobernado por {@code
+ * mejorvejez.notificaciones.whatsapp-habilitado} (spike TSA-46, fijo en
+ * {@code false} en este MVP).
  */
 @Service
 public class ServicioCanales {
@@ -53,18 +60,17 @@ public class ServicioCanales {
     private final ServicioUsuarioActual servicioUsuarioActual;
     private final ServicioAuditoria servicioAuditoria;
     private final Clock reloj;
-    private final Map<String, EnviadorNotificacion> enviadoresPorCanal;
+    private final boolean whatsappHabilitado;
 
     public ServicioCanales(RepositorioCanalNotificacion repositorio, RepositorioUsuario repositorioUsuario,
             ServicioUsuarioActual servicioUsuarioActual, ServicioAuditoria servicioAuditoria, Clock reloj,
-            List<EnviadorNotificacion> enviadores) {
+            @Value("${mejorvejez.notificaciones.whatsapp-habilitado:false}") boolean whatsappHabilitado) {
         this.repositorio = repositorio;
         this.repositorioUsuario = repositorioUsuario;
         this.servicioUsuarioActual = servicioUsuarioActual;
         this.servicioAuditoria = servicioAuditoria;
         this.reloj = reloj;
-        this.enviadoresPorCanal = enviadores.stream()
-                .collect(Collectors.toMap(EnviadorNotificacion::canal, Function.identity()));
+        this.whatsappHabilitado = whatsappHabilitado;
     }
 
     /** Canales del usuario autenticado ({@code GET /api/yo/canales}). */
@@ -88,8 +94,7 @@ public class ServicioCanales {
      * usuario: sin el bloqueo, ambos podrían ver "sin fila" para el mismo
      * canal y chocar con la PK compuesta {@code (ID_USUARIO, CANAL)} de
      * {@code CANAL_NOTIFICACION_USUARIO}, lo que terminaría en el 409
-     * genérico de {@code DataIntegrityViolationException} (ronda de
-     * corrección 1, prohibido por la restricción global).
+     * genérico de {@code DataIntegrityViolationException}.
      */
     @Transactional
     public RespuestaCanales actualizarMisCanales(SolicitudActualizarCanales solicitud) {
@@ -258,9 +263,16 @@ public class ServicioCanales {
         return habilitado && esDisponible(canal);
     }
 
+    /**
+     * Si el canal está disponible en el Core: {@code CORREO} siempre lo
+     * está (el envío lo hace Alertas); {@code WHATSAPP} depende de {@code
+     * mejorvejez.notificaciones.whatsapp-habilitado}.
+     */
     private boolean esDisponible(String canal) {
-        EnviadorNotificacion enviador = enviadoresPorCanal.get(canal);
-        return enviador != null && enviador.disponible();
+        if (CodigosNotificaciones.CANAL_CORREO.equals(canal)) {
+            return true;
+        }
+        return CodigosNotificaciones.CANAL_WHATSAPP.equals(canal) && whatsappHabilitado;
     }
 
     private boolean esCorreoValido(String destino) {

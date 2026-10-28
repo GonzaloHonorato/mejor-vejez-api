@@ -55,9 +55,21 @@ public class FixturaAlertas {
     }
 
     /**
+     * Cambia la {@code FECHA_DETECCION} de la alerta indicada, sin pasar por
+     * el servicio: lo usan las pruebas que necesitan controlar si una alerta
+     * cae antes o después de una ventana {@code desde}, sin depender de
+     * cuándo corre realmente la prueba (la columna nace con {@code
+     * SYSTIMESTAMP}, no con el reloj fijo de la prueba).
+     */
+    public void cambiarFechaDeteccion(long idAlerta, OffsetDateTime fechaDeteccion) {
+        jdbcTemplate.update("UPDATE ALERTA_CUIDADO SET FECHA_DETECCION = ? WHERE ID_ALERTA = ?", fechaDeteccion,
+                idAlerta);
+    }
+
+    /**
      * Cierra la alerta indicada ({@code CERRADA}) con la {@code
      * FECHA_REVISION} exacta dada, sin pasar por el servicio: lo usan las
-     * pruebas del panel familiar (Fase 6, Tarea 2) que necesitan controlar
+     * pruebas del panel familiar que necesitan controlar
      * la ventana de "cerradas en los últimos N días".
      */
     public void cerrarAlertaConFecha(long idAlerta, OffsetDateTime fechaRevision) {
@@ -76,6 +88,32 @@ public class FixturaAlertas {
                 idAlerta, idUsuario, canal, numero,
                 idEstado(CodigosAlertas.TABLA_INTENTO_NOTIFICACION, CodigosAlertas.CAMPO_ESTADO_ENVIO,
                         codigoEstadoEnvio));
+    }
+
+    /**
+     * Inserta un INTENTO_NOTIFICACION con su {@code FECHA_INTENTO} exacta
+     * (Fase 9, TSA-61): lo usan las pruebas de la ventana de confirmación de
+     * un {@code PENDIENTE} ({@code interno.ServicioReservaIntentos}), que
+     * necesitan controlar cuánto tiempo lleva reservado.
+     */
+    public long crearIntentoConFecha(long idAlerta, long idUsuario, String canal, int numero,
+            String codigoEstadoEnvio, OffsetDateTime fechaIntento) {
+        return insertarYObtenerId(
+                "INSERT INTO INTENTO_NOTIFICACION (ID_ALERTA, ID_USUARIO_DESTINATARIO, CANAL, NUMERO_INTENTO, "
+                        + "ID_ESTADO_ENVIO, FECHA_INTENTO) VALUES (?, ?, ?, ?, ?, ?)",
+                "ID_INTENTO",
+                idAlerta, idUsuario, canal, numero,
+                idEstado(CodigosAlertas.TABLA_INTENTO_NOTIFICACION, CodigosAlertas.CAMPO_ESTADO_ENVIO,
+                        codigoEstadoEnvio),
+                fechaIntento);
+    }
+
+    /** Estado de envío (código) del intento indicado. */
+    public String estadoIntento(long idIntento) {
+        return jdbcTemplate.queryForObject(
+                "SELECT ce.CODIGO_ESTADO FROM INTENTO_NOTIFICACION i "
+                        + "JOIN CATALOGO_ESTADOS ce ON ce.ID_ESTADO = i.ID_ESTADO_ENVIO WHERE i.ID_INTENTO = ?",
+                String.class, idIntento);
     }
 
     /** Inserta un CANAL_NOTIFICACION_USUARIO del usuario y canal indicados. */

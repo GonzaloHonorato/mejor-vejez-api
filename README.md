@@ -7,6 +7,19 @@ Fase 0: esquema completo con Flyway (usuarios, catálogos, auditoría…), alta
 del usuario en su primer ingreso, catálogos para el front y errores uniformes
 en español (`ProblemDetail` con `idCorrelacion`).
 
+Es el **core** (único con base de datos) de la arquitectura de microservicios
+de Mejor Vejez. Desde la Fase 9 ya no detecta atrasos, genera alertas
+preventivas ni envía correos ni reportes: reenvía esas corridas a los otros
+dos servicios por REST (`/api/interno/**`, cabecera `X-Clave-Servicio`).
+
+| Microservicio | Repositorio | Puerto | Base de datos |
+|---|---|---|---|
+| Core (reglas del cuidado) | `mejor-vejez-api` | 8080 | Oracle (única) |
+| Alertas y notificaciones | `mejor-vejez-alertas` | 8081 | No |
+| Reportes | `mejor-vejez-reportes` | 8082 | No |
+
+La aplicación web (`mejor-vejez-web`, puerto 4200) solo habla con este core.
+
 ## Endpoints
 
 | Método | Ruta | Auth | Respuesta |
@@ -68,14 +81,16 @@ servicio. En un controller, el usuario sale de `@AuthenticationPrincipal Jwt jwt
 | `FIREBASE_PROJECT_ID` | sí | project ID de Firebase |
 | `CORS_ORIGINS` | no | orígenes separados por coma (def. `https://mejor-vejez-app.adndigital.cl`) |
 | `JPA_DDL_AUTO` | no | def. `validate`: el esquema lo crea Flyway (`src/main/resources/db/migration`) y Hibernate solo lo valida. Flyway corre al arrancar, así que la API **exige** la BD para levantar |
-| `MAIL_HOST` | no (sí para enviar correos) | servidor SMTP de las alertas. Vacío: cada envío queda como intento FALLIDO ("El envío de correo no está configurado.") |
-| `MAIL_PORT` | no | def. `587` |
-| `MAIL_USERNAME` / `MAIL_PASSWORD` | no | credenciales SMTP; solo en el panel de Dokploy, nunca en el repo |
-| `MAIL_SMTP_AUTH` | no | def. `true` |
-| `MAIL_STARTTLS` | no | def. `true` |
-| `MAIL_REMITENTE` | no (sí para enviar correos) | dirección `From` de los correos de alerta. Vacío: igual que sin `MAIL_HOST` |
-| `MAIL_TIMEOUT_MS` | no | def. `10000`: timeout SMTP de conexión, lectura y escritura (ms); un SMTP colgado termina en intento FALLIDO |
-| `APP_URL` | no | URL pública del front para el enlace del correo, p. ej. `https://mejor-vejez-app.adndigital.cl` (def. en el compose; la barra final se ignora) |
+| `CLAVE_SERVICIO` | **sí** | sin valor por defecto (`:?falta CLAVE_SERVICIO` en el compose de Dokploy). Cabecera `X-Clave-Servicio` de las llamadas internas; la misma en core, alertas y reportes |
+| `ALERTAS_URL` | no | def. `http://localhost:8081` (local) / `http://mejor-vejez-alertas:8081` (Dokploy). URL interna del microservicio de alertas y notificaciones |
+| `REPORTES_URL` | no | def. `http://localhost:8082` (local) / `http://mejor-vejez-reportes:8082` (Dokploy). URL interna del microservicio de reportes |
+| `ALERTAS_TIMEOUT_SEG` | no | def. `120`. Timeout de LECTURA (en segundos) al llamar a Alertas; la conexión usa 5 s fijos. Si se agota, la corrida manual responde 504 (no 503): el servicio no respondió a tiempo, pero la corrida remota puede seguir en curso |
+| `REPORTES_TIMEOUT_SEG` | no | def. `600`. Lo mismo que `ALERTAS_TIMEOUT_SEG`, pero para Reportes (un reporte semanal con varios grupos puede tardar varios minutos) |
+
+> El envío de correos (SMTP) y la generación de reportes en PDF ya no viven
+> acá: desde la Fase 9 los hacen `mejor-vejez-alertas` y `mejor-vejez-reportes`
+> (sus variables `MAIL_*` y `APP_URL` están en el README y el `.env.example`
+> de `mejor-vejez-alertas`).
 
 ### Wallet en base64
 
@@ -117,29 +132,23 @@ base64 -i Wallet_MEJORVEJEZ.zip | tr -d '\n' | pbcopy
    Espera a que quede `healthy` (con `docker compose`/`docker-compose`:
    `docker ps`; con `docker run`: `docker inspect -f '{{.State.Health.Status}}' oracle-local`).
 
-2. Arrancar la API contra ese Oracle local:
+2. Arrancar la API contra ese Oracle local, con la misma `CLAVE_SERVICIO` que
+   vas a usar en `mejor-vejez-alertas` y `mejor-vejez-reportes`:
 
    ```sh
    cp .env.local.example .env.local      # .env.local está en .gitignore
    set -a; source .env.local; set +a
-   ./mvnw spring-boot:run                 # http://localhost:8080/api/salud
+   CLAVE_SERVICIO=<la clave compartida> ./mvnw spring-boot:run   # http://localhost:8080/api/salud
    ```
 
    Flyway crea el esquema (3 migraciones) en el Oracle local al arrancar.
 
-   **Correo (Fase 5):** levanta también `mailpit` (`docker-compose.local.yml`,
-   SMTP `127.0.0.1:1025`, bandeja web `http://127.0.0.1:8025`) con el mismo
-   comando `docker compose -f docker-compose.local.yml up -d` del paso 1, y
-   arranca la API con estas variables para que apunte a él:
-
-   ```sh
-   MAIL_HOST=localhost MAIL_PORT=1025 MAIL_SMTP_AUTH=false MAIL_STARTTLS=false \
-   MAIL_REMITENTE=alertas@mejorvejez.local ./mvnw spring-boot:run
-   ```
-
-   Si `MAIL_HOST` o `MAIL_REMITENTE` quedan vacíos (valor por defecto), la API
-   arranca igual: los intentos de correo quedan `FALLIDO` con un detalle de
-   error, sin tumbar el proceso.
+   **Correo y reportes (Fase 9):** este core ya no envía correos ni genera
+   PDFs. Para probar la detección de atrasos, las alertas preventivas o el
+   reporte semanal en local hace falta levantar también
+   `mejor-vejez-alertas` y `mejor-vejez-reportes` (con Mailpit, que sigue en
+   `docker-compose.local.yml` de este repo pero ahora lo usa alertas) — ver
+   `planes/guia-instalacion-local.md`.
 
 3. Datos demo (opcional), después de que Flyway haya corrido:
 
@@ -168,7 +177,10 @@ TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
 
 App de tipo **Compose** apuntando a este repo, archivo `docker-compose.yml`.
 
-1. **Environment:** las variables de arriba.
+1. **Environment:** las variables de arriba. `CLAVE_SERVICIO` es obligatoria
+   y debe ser **la misma** que en `mejor-vejez-alertas` y
+   `mejor-vejez-reportes` (se la define una vez y se copia en los tres).
 2. **Domains:** servicio `mejor-vejez-api`, puerto `8080`, host
-   `mejor-vejez-api.adndigital.cl`, HTTPS (Let's Encrypt).
+   `mejor-vejez-api.adndigital.cl`, HTTPS (Let's Encrypt). Es el único de los
+   tres microservicios con dominio público.
 3. Deploy. Verificar: `curl https://mejor-vejez-api.adndigital.cl/api/salud`.

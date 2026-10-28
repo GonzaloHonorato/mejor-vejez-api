@@ -18,6 +18,9 @@ final class AccionesAlertas {
     /** Corrida manual del proceso de alertas preventivas ({@code exigirAdministrador}). */
     static final String EJECUTAR_ALERTAS_PREVENTIVAS = "EJECUTAR_ALERTAS_PREVENTIVAS";
 
+    /** Corrida manual del reporte semanal, reenviada al servicio de Reportes ({@code exigirAdministrador}). */
+    static final String EJECUTAR_REPORTE_SEMANAL = "EJECUTAR_REPORTE_SEMANAL";
+
     private AccionesAlertas() {
     }
 }

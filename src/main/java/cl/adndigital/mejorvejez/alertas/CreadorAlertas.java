@@ -111,8 +111,14 @@ public class CreadorAlertas {
         return Optional.of(repositorioAlertas.save(alerta).getIdAlerta());
     }
 
-    /** Clave de idempotencia del atraso de una tarea (regla 1): {@code ATR-{idTarea}}. */
-    static String claveAtraso(long idTarea) {
+    /**
+     * Clave de idempotencia del atraso de una tarea (regla 1): {@code
+     * ATR-{idTarea}}. Pública: Fase 9 (TSA-61), {@code
+     * cl.adndigital.mejorvejez.interno.ServicioInternoAlertas} la usa para
+     * saber si {@code POST /api/interno/alertas} ya había creado la alerta
+     * cuando {@link #crearAtraso} devuelve vacío.
+     */
+    public static String claveAtraso(long idTarea) {
         return PREFIJO_ATRASO + idTarea;
     }
 
@@ -184,8 +190,12 @@ public class CreadorAlertas {
         return Optional.of(repositorioAlertas.save(alerta).getIdAlerta());
     }
 
-    /** Clave de idempotencia de la cita próxima de una tarea (regla 1): {@code CIT-{idTarea}}. */
-    static String claveCitaProxima(long idTarea) {
+    /**
+     * Clave de idempotencia de la cita próxima de una tarea (regla 1):
+     * {@code CIT-{idTarea}}. Pública por el mismo motivo que {@link
+     * #claveAtraso} (Fase 9, TSA-61).
+     */
+    public static String claveCitaProxima(long idTarea) {
         return PREFIJO_CITA + idTarea;
     }
 
@@ -268,8 +278,12 @@ public class CreadorAlertas {
         return Optional.of(repositorioAlertas.save(alerta).getIdAlerta());
     }
 
-    /** Clave de idempotencia de la reposición de un detalle (regla 1): {@code REP-{idDetalle}-{yyyyMMdd}}. */
-    static String claveReposicion(long idDetalle, LocalDate termino) {
+    /**
+     * Clave de idempotencia de la reposición de un detalle (regla 1): {@code
+     * REP-{idDetalle}-{yyyyMMdd}}. Pública por el mismo motivo que {@link
+     * #claveAtraso} (Fase 9, TSA-61).
+     */
+    public static String claveReposicion(long idDetalle, LocalDate termino) {
         return PREFIJO_REPOSICION + idDetalle + "-" + FORMATO_CLAVE_FECHA.format(termino);
     }
 

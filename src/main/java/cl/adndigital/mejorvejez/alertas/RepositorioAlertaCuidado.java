@@ -43,14 +43,10 @@ public interface RepositorioAlertaCuidado extends JpaRepository<AlertaCuidado, L
 
     /**
      * Ids de las alertas ABIERTA detectadas desde {@code desde} (regla 10 de
-     * la Fase 5: el paso "notificar pendientes" de cada corrida), filtradas
-     * por grupo cuando {@code idGrupo} no es nulo (las pruebas siempre lo
-     * dan; la corrida real no filtra). Orden por id, para procesarlas en el
-     * mismo orden en que se crearon.
+     * la Fase 5: el paso "notificar pendientes" de cada corrida), por id,
+     * para procesarlas en el mismo orden en que se crearon.
      */
     @Query("SELECT a.idAlerta FROM AlertaCuidado a WHERE a.idEstado = :idEstadoAbierta "
-            + "AND a.fechaDeteccion >= :desde AND (:idGrupo IS NULL OR a.idGrupo = :idGrupo) "
-            + "ORDER BY a.idAlerta")
-    List<Long> idsAbiertasDesde(@Param("idEstadoAbierta") long idEstadoAbierta, @Param("desde") OffsetDateTime desde,
-            @Param("idGrupo") Long idGrupo);
+            + "AND a.fechaDeteccion >= :desde ORDER BY a.idAlerta")
+    List<Long> idsAbiertasDesde(@Param("idEstadoAbierta") long idEstadoAbierta, @Param("desde") OffsetDateTime desde);
 }

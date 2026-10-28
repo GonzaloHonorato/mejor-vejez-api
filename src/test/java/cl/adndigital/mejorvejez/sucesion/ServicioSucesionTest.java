@@ -72,9 +72,9 @@ class ServicioSucesionTest {
      * otras pruebas que comparten la BD (900.000.000 de {@code
      * ServicioDetallesPlanTest}/{@code ServicioContactosTest}, 950.000.000
      * de {@code tareas.FixturaGeneracion}, 960.000.000 de {@code
-     * relevos.ServicioRelevosTest}, 970.000.000 de {@code
-     * alertas.ServicioNotificacionAlertasTest}, 980/981.000.000 de {@code
-     * alertas}) ni con el 993.000.000 de {@link ConcurrenciaSucesionTest}.
+     * relevos.ServicioRelevosTest}, 982 a 985.000.000 de {@code
+     * interno}/{@code alertas}) ni con el 993.000.000 de {@link
+     * ConcurrenciaSucesionTest}.
      */
     private static final AtomicLong SIGUIENTE_ID_ALTO = new AtomicLong(990_000_000L);
 
@@ -246,7 +246,7 @@ class ServicioSucesionTest {
                 .hasMessage(ServicioSucesion.MENSAJE_SOLO_COORDINADOR_PROPONE);
         assertThat(contarPropuestas(e.idGrupo())).isZero();
 
-        // Minor 1 de la revisión final: el 403 de dominio se audita como RECHAZADA, con motivo en código.
+        // El 403 de dominio se audita como RECHAZADA, con motivo en código.
         List<Map<String, Object>> eventos = eventosDeResultado(e.idGrupo(), "PROPONER_SUCESION", "RECHAZADA");
         assertThat(eventos).hasSize(1);
         assertThat(((Number) eventos.get(0).get("ID_USUARIO_ACTOR")).longValue())
@@ -392,7 +392,7 @@ class ServicioSucesionTest {
     }
 
     /**
-     * Minor 2 de la revisión final: si promueven al candidato a COORDINADOR mientras la
+     * Si promueven al candidato a COORDINADOR mientras la
      * propuesta sigue PENDIENTE, aceptar revalida el rol y la rechaza (en vez de dejarla
      * ACEPTADA sabiendo que completar fallará igual).
      */
@@ -438,7 +438,7 @@ class ServicioSucesionTest {
 
         assertThat(estadoPropuesta(propuesta.idPropuesta())).isEqualTo("PENDIENTE");
 
-        // Minor 1 de la revisión final: cada 403 (de ambos actores, dos intentos cada uno) se
+        // Cada 403 (de ambos actores, dos intentos cada uno) se
         // audita como RECHAZADA con motivo en código, nunca texto libre.
         List<Map<String, Object>> aceptarRechazado = eventosDeResultado(e.idGrupo(), "ACEPTAR_SUCESION", "RECHAZADA");
         assertThat(aceptarRechazado).hasSize(2);
@@ -550,7 +550,7 @@ class ServicioSucesionTest {
     }
 
     /**
-     * Important 1 de la revisión final: un colaborador que no es el saliente sigue recibiendo
+     * Un colaborador que no es el saliente sigue recibiendo
      * 403 al cancelar (ya no basta con ser un COLABORADOR del grupo; hay que ser el saliente, un
      * COORDINADOR activo o un administrador). El candidato, colaborador en este escenario,
      * también cae en este caso.
@@ -570,7 +570,7 @@ class ServicioSucesionTest {
         }
         assertThat(estadoPropuesta(propuesta.idPropuesta())).isEqualTo("PENDIENTE");
 
-        // Minor 1 de la revisión final: ambos 403 se auditan como RECHAZADA con motivo en código.
+        // Ambos 403 se auditan como RECHAZADA con motivo en código.
         List<Map<String, Object>> rechazados = eventosDeResultado(e.idGrupo(), "CANCELAR_SUCESION", "RECHAZADA");
         assertThat(rechazados).hasSize(2);
         assertThat(rechazados).allSatisfy(evento -> assertThat(detalles(evento).get("motivo"))
@@ -578,7 +578,7 @@ class ServicioSucesionTest {
     }
 
     /**
-     * Important 1 de la revisión final: en un grupo con dos coordinadores, si el saliente sale
+     * En un grupo con dos coordinadores, si el saliente sale
      * del grupo (acá, lo desactiva el otro coordinador con {@code ServicioIntegrantes.desactivar}),
      * la propuesta ya no queda huérfana: el otro coordinador activo puede cancelarla y, con eso
      * resuelto, volver a proponer.
@@ -627,7 +627,7 @@ class ServicioSucesionTest {
                 .isInstanceOf(ExcepcionConflicto.class)
                 .hasMessage(ServicioSucesion.MENSAJE_TRANSICION_INVALIDA);
 
-        // Cancelar una COMPLETADA (la Tarea 4 implementa completar: aquí se fuerza por JDBC).
+        // Cancelar una COMPLETADA (aquí se fuerza el estado por JDBC).
         RespuestaPropuesta otra = servicio.proponer(e.idGrupo(), e.candidato().idUsuario());
         jdbcTemplate.update("UPDATE PROPUESTA_SUCESION SET ID_ESTADO = ?, FECHA_COMPLETADO = SYSTIMESTAMP "
                 + "WHERE ID_PROPUESTA = ?", idEstado("PROPUESTA_SUCESION", "COMPLETADA"), otra.idPropuesta());

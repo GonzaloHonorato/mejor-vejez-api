@@ -56,6 +56,11 @@ public class ManejadorErrores {
         return construirProblema(HttpStatus.CONFLICT, "Conflicto", excepcion.getMessage());
     }
 
+    @ExceptionHandler(ExcepcionSolicitudInvalida.class)
+    public ProblemDetail manejarSolicitudInvalida(ExcepcionSolicitudInvalida excepcion) {
+        return construirProblema(HttpStatus.BAD_REQUEST, "Datos inválidos", excepcion.getMessage());
+    }
+
     @ExceptionHandler(ExcepcionNoAutenticado.class)
     public ProblemDetail manejarNoAutenticado(ExcepcionNoAutenticado excepcion) {
         return construirProblema(HttpStatus.UNAUTHORIZED, ExcepcionNoAutenticado.TITULO, excepcion.getMessage());
@@ -64,6 +69,19 @@ public class ManejadorErrores {
     @ExceptionHandler(ExcepcionAccesoDenegado.class)
     public ProblemDetail manejarAccesoDenegado(ExcepcionAccesoDenegado excepcion) {
         return construirProblema(HttpStatus.FORBIDDEN, ExcepcionAccesoDenegado.TITULO, excepcion.getMessage());
+    }
+
+    /**
+     * Error de una llamada interna a Alertas o a Reportes ({@code
+     * ClienteServicios}): conserva el código y el detalle que trae la
+     * excepción (el mismo 4xx del servicio remoto, o 503 si no respondió),
+     * sin generar un texto propio.
+     */
+    @ExceptionHandler(ExcepcionServicioExterno.class)
+    public ResponseEntity<ProblemDetail> manejarServicioExterno(ExcepcionServicioExterno excepcion) {
+        ProblemDetail problema = construirProblema(excepcion.getEstado(), tituloServicioExterno(excepcion.getEstado()),
+                excepcion.getMessage());
+        return ResponseEntity.status(excepcion.getEstado()).body(problema);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -165,6 +183,22 @@ public class ManejadorErrores {
             case 406 -> "No se puede responder en el formato solicitado.";
             case 415 -> "El tipo de contenido de la solicitud no está soportado.";
             default -> "La solicitud no es válida.";
+        };
+    }
+
+    private String tituloServicioExterno(HttpStatus estado) {
+        if (estado == HttpStatus.SERVICE_UNAVAILABLE) {
+            return "Servicio no disponible";
+        }
+        if (estado == HttpStatus.GATEWAY_TIMEOUT) {
+            return "Tiempo de espera agotado";
+        }
+        return switch (estado) {
+            case BAD_REQUEST -> "Datos inválidos";
+            case NOT_FOUND -> "Recurso no encontrado";
+            case CONFLICT -> "Conflicto";
+            case UNPROCESSABLE_ENTITY -> "Regla de negocio";
+            default -> "Error del servicio";
         };
     }
 

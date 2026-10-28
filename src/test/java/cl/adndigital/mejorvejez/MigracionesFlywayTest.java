@@ -20,18 +20,26 @@ class MigracionesFlywayTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void creaLas27Tablas() {
+    void creaLas29Tablas() {
         Integer tablas = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME <> 'flyway_schema_history'", Integer.class);
 
-        assertThat(tablas).isEqualTo(27);
+        // 27 de V1 + ENVIO_REPORTE y ENVIO_REPORTE_DESTINATARIO de V5.
+        assertThat(tablas).isEqualTo(29);
     }
 
     @Test
     void cargaLosCatalogos() {
-        assertThat(contarFilas("CATALOGO_ESTADOS")).isEqualTo(48);
+        // 48 de V2 + 6 de V5 (ENVIO_REPORTE.ESTADO y ENVIO_REPORTE_DESTINATARIO.ESTADO).
+        assertThat(contarFilas("CATALOGO_ESTADOS")).isEqualTo(54);
         assertThat(contarFilas("CATALOGO_NEGOCIO")).isEqualTo(21);
         assertThat(contarFilas("ROL_GRUPO")).isEqualTo(2);
+    }
+
+    @Test
+    void catalogoTieneEstadosDeEnvio() {
+        assertThat(estadosDe("ENVIO_REPORTE")).containsExactly("PENDIENTE", "ENVIADO", "FALLIDO");
+        assertThat(estadosDe("ENVIO_REPORTE_DESTINATARIO")).containsExactly("PENDIENTE", "ENVIADO", "FALLIDO");
     }
 
     @Test
@@ -51,5 +59,12 @@ class MigracionesFlywayTest {
 
     private Integer contarFilas(String tabla) {
         return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + tabla, Integer.class);
+    }
+
+    private List<String> estadosDe(String tabla) {
+        return jdbcTemplate.queryForList(
+                "SELECT CODIGO_ESTADO FROM CATALOGO_ESTADOS WHERE NOMBRE_TABLA = ? AND NOMBRE_CAMPO = 'ESTADO' "
+                        + "ORDER BY ORDEN",
+                String.class, tabla);
     }
 }

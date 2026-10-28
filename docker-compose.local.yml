@@ -31,10 +31,13 @@ services:
       retries: 10
       start_period: 60s
 
-  # Servidor SMTP de pruebas (Fase 5): atrapa todos los correos que envía la
-  # API en local, sin entregarlos de verdad. Bandeja web en
-  # http://127.0.0.1:8025. Levanta la API local con MAIL_HOST=localhost
-  # MAIL_PORT=1025 MAIL_SMTP_AUTH=false MAIL_STARTTLS=false (ver README).
+  # Servidor SMTP de pruebas: atrapa todos los correos que se envían en local,
+  # sin entregarlos de verdad. Bandeja web en http://127.0.0.1:8025. Es
+  # infraestructura local compartida, pero desde la Fase 9 lo usa el
+  # microservicio `mejor-vejez-alertas` (no este core, que ya no envía
+  # correos): levántalo con MAIL_HOST=localhost MAIL_PORT=1025
+  # MAIL_SMTP_AUTH=false MAIL_STARTTLS=false (ver
+  # `planes/guia-instalacion-local.md` y el README de `mejor-vejez-alertas`).
   mailpit:
     image: axllent/mailpit
     restart: unless-stopped

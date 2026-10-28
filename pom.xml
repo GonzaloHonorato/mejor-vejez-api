@@ -50,10 +50,6 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-mail</artifactId>
-		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -124,6 +120,14 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-oracle-free</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Simula Alertas/Reportes al probar ClienteServicios (Fase 9); Spring Boot no gestiona esta
+		     versión: se fija explícitamente (okhttp 5.x estable), igual que en los repos nuevos. -->
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>mockwebserver3</artifactId>
+			<version>5.5.1</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

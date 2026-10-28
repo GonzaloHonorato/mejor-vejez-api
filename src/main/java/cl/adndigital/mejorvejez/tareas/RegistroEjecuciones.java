@@ -47,8 +47,8 @@ public class RegistroEjecuciones {
 
     /**
      * Registra una corrida nueva del tipo indicado ({@code GENERACION_TAREAS}
-     * | {@code DETECCION_ATRASOS} | {@code ALERTAS_PREVENTIVAS}, Fase 5),
-     * {@code INICIADA}, y devuelve su id.
+     * | {@code DETECCION_ATRASOS} | {@code ALERTAS_PREVENTIVAS} | {@code
+     * REPORTE_SEMANAL}), {@code INICIADA}, y devuelve su id.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public long iniciar(String tipoEjecucion, OffsetDateTime inicio, OffsetDateTime fin) {

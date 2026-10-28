@@ -25,20 +25,19 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://mejor-vejez-app.adndigital.cl}
       JPA_DDL_AUTO: ${JPA_DDL_AUTO:-validate}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
-      # ── Correo de alertas (Fase 5) ───────────────────────────────────────
-      # Si falta MAIL_HOST o MAIL_REMITENTE, cada envío queda como intento FALLIDO
-      # ("El envío de correo no está configurado."); la API igual arranca.
-      # Usuario y clave SMTP van SOLO en el panel de Dokploy, nunca acá.
-      MAIL_HOST: ${MAIL_HOST:-}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
-      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
-      MAIL_REMITENTE: ${MAIL_REMITENTE:-}
-      MAIL_TIMEOUT_MS: ${MAIL_TIMEOUT_MS:-10000}
-      # URL pública del front: arma el enlace a la alerta en el correo.
-      APP_URL: ${APP_URL:-https://mejor-vejez-app.adndigital.cl}
+      # ── Microservicios de Alertas y de Reportes (Fase 9) ─────────────────
+      # El core ya no envía correos ni genera PDFs: las rutas de
+      # administración reenvían la corrida manual a estos servicios con la
+      # clave compartida. Sin valor por defecto para CLAVE_SERVICIO a
+      # propósito: el compose se niega a levantar sin ella.
+      CLAVE_SERVICIO: ${CLAVE_SERVICIO:?falta CLAVE_SERVICIO}
+      ALERTAS_URL: ${ALERTAS_URL:-http://mejor-vejez-alertas:8081}
+      REPORTES_URL: ${REPORTES_URL:-http://mejor-vejez-reportes:8082}
+      # Timeout de LECTURA por servicio (segundos); la conexión usa 5 s fijos.
+      # Si se agota, la corrida manual responde 504 (la corrida remota puede
+      # seguir en curso), no 503.
+      ALERTAS_TIMEOUT_SEG: ${ALERTAS_TIMEOUT_SEG:-120}
+      REPORTES_TIMEOUT_SEG: ${REPORTES_TIMEOUT_SEG:-600}
     expose:
       - "8080"
     healthcheck:

@@ -1,138 +1,139 @@
 package cl.adndigital.mejorvejez.alertas;
 
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
-import java.util.function.LongFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
+import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
+import cl.adndigital.mejorvejez.comun.ExcepcionServicioExterno;
 import cl.adndigital.mejorvejez.tareas.CodigosTareas;
 import cl.adndigital.mejorvejez.tareas.RegistroEjecuciones;
-import cl.adndigital.mejorvejez.tareas.RespuestaEjecucion;
 import cl.adndigital.mejorvejez.usuarios.Usuario;
 
 /**
- * Lo que comparten las dos corridas de alertas (reglas 11 y 12 de la Fase 5):
- * {@link ServicioDeteccionAtrasos} (TSA-43) y {@link
- * ServicioAlertasPreventivas} (TSA-44). Cada servicio conserva solo lo que le
- * es propio (sus candidatas y su creación por unidad, con sus mensajes de
- * log); este colaborador cierra la corrida, registra el fallo del proceso y
- * audita la corrida manual, siempre igual entre los dos.
- *
- * <p>Ronda de corrección 1 (revisión de la Tarea 6): antes, {@code procesar},
- * el {@code catch} del proceso, {@code ejecutarManual} y {@code
- * auditarFallo} estaban duplicados casi literalmente entre los dos
- * servicios. Sin cambios de comportamiento: mismo orden de operaciones,
- * mismos parámetros a {@code RegistroEjecuciones} y {@code
- * ServicioAuditoria} que antes de la extracción.
+ * Auditoría de una corrida manual del administrador sobre un proceso que
+ * ahora vive en otro servicio (Fase 9): registra {@code EXITO} con el id de
+ * ejecución, su {@code idEstado} vigente y los totales que trae la
+ * respuesta reenviada, o {@code FALLO}, en transacción propia, si la
+ * llamada no llegó a responder o si la ejecución quedó {@code FALLIDA}.
  */
 @Component
 class CorridaAlertas {
 
-    private static final String SEPARADOR_ERRORES = "\n";
-    private static final String ID_ENTIDAD_SIN_EJECUCION = "SIN_EJECUCION";
+    private static final Logger LOG = LoggerFactory.getLogger(CorridaAlertas.class);
 
-    private final RegistroEjecuciones registro;
+    static final String ID_ENTIDAD_SIN_EJECUCION = "SIN_EJECUCION";
+
     private final ServicioAuditoria servicioAuditoria;
+    private final RegistroEjecuciones registro;
+    private final ServicioCatalogos servicioCatalogos;
 
-    CorridaAlertas(RegistroEjecuciones registro, ServicioAuditoria servicioAuditoria) {
-        this.registro = registro;
+    CorridaAlertas(ServicioAuditoria servicioAuditoria, RegistroEjecuciones registro,
+            ServicioCatalogos servicioCatalogos) {
         this.servicioAuditoria = servicioAuditoria;
+        this.registro = registro;
+        this.servicioCatalogos = servicioCatalogos;
     }
 
     /**
-     * Cierra la corrida (regla 11) a partir de lo acumulado durante el
-     * cuerpo: las alertas creadas en esta corrida, los errores de creación y
-     * el resultado de "notificar pendientes". {@code CANTIDAD_ERRORES} suma
-     * los errores de creación, los intentos {@code FALLIDO}, las alertas
-     * creadas en ESTA corrida sin ningún destinatario con canal operativo y
-     * los errores inesperados del notificador. El estado sale de {@link
-     * EstadoCorrida#codigo}.
+     * Reenvía la corrida con {@code reenviar} y audita el resultado. Si
+     * {@code reenviar} lanza, audita {@code FALLO} (ver {@link
+     * #auditarFallo}) y relanza. Si responde, el id de entidad es {@code
+     * idEjecucion} (o {@value #ID_ENTIDAD_SIN_EJECUCION} si viene {@code
+     * null}, nunca el texto {@code "null"}); si hay un id, se relee la
+     * {@code EJECUCION_PROCESO} con {@link #idEstadoDe} y su {@code
+     * idEstado} se agrega al detalle. El resultado de la auditoría es
+     * {@code EXITO}, salvo que esa ejecución haya quedado {@code FALLIDA},
+     * en cuyo caso es {@code FALLO} aunque la llamada misma no lanzara (el
+     * proceso remoto sí falló).
+     *
+     * <p>Si la relectura de {@link #idEstadoDe} falla (la fila todavía no
+     * existe, o cualquier otro error de la consulta), eso nunca tumba esta
+     * llamada ni esconde que la corrida remota ya terminó: el detalle lleva
+     * {@code idEstado} en {@code null}, queda un {@code LOG.warn} y la
+     * auditoría sigue como {@code EXITO} (la relectura es solo un dato
+     * adicional del detalle, nunca una condición para fallarle la respuesta
+     * al administrador).
      */
-    RespuestaEjecucion cerrar(long idEjecucion, Set<Long> creadasEnEstaCorrida, List<String> errores,
-            ResultadoNotificacion notificacion) {
-        int creadas = creadasEnEstaCorrida.size();
-        int cantidadErrores = errores.size() + notificacion.fallidos();
-        if (notificacion.fallidos() > 0) {
-            errores.add("Notificación: " + notificacion.fallidos() + " intento(s) fallido(s)");
-        }
-        // Regla 11: solo las alertas creadas en ESTA corrida; las anteriores ya se reportaron.
-        for (Long idAlerta : notificacion.alertasSinDestinatario()) {
-            if (creadasEnEstaCorrida.contains(idAlerta)) {
-                errores.add("Alerta " + idAlerta + ": sin destinatarios con canal operativo");
-                cantidadErrores++;
-            }
-        }
-        errores.addAll(notificacion.errores());
-        cantidadErrores += notificacion.errores().size();
-
-        registro.finalizar(idEjecucion, EstadoCorrida.codigo(creadas, notificacion.enviados(), cantidadErrores),
-                creadas, cantidadErrores, errores.isEmpty() ? null : String.join(SEPARADOR_ERRORES, errores));
-        return registro.respuesta(idEjecucion);
-    }
-
-    /**
-     * Registra el fallo de algo fuera de los pasos por unidad (la consulta
-     * de candidatas o el notificador entero): agrega {@code "Proceso:
-     * {claseSimple}"} (nunca el mensaje crudo, que podría traer SQL; ese va
-     * solo al log del llamador) e intenta cerrar la {@code
-     * EJECUCION_PROCESO} como {@code FALLIDA}. Un fallo al cerrar no tapa el
-     * error original: se agrega como suprimido. No relanza: el llamador
-     * decide (siempre debe volver a lanzar {@code ex}).
-     */
-    void registrarFallo(long idEjecucion, Set<Long> creadasEnEstaCorrida, List<String> errores, RuntimeException ex) {
-        errores.add("Proceso: " + ex.getClass().getSimpleName());
+    <T> T reenviarAuditado(Usuario administrador, String accion, Supplier<T> reenviar, Function<T, Long> idEjecucion,
+            Function<T, Map<String, Object>> detalles) {
+        T respuesta;
         try {
-            registro.finalizar(idEjecucion, CodigosTareas.ESTADO_EJECUCION_FALLIDA, creadasEnEstaCorrida.size(),
-                    errores.size(), String.join(SEPARADOR_ERRORES, errores));
-        } catch (RuntimeException alFinalizar) {
-            ex.addSuppressed(alFinalizar);
-        }
-    }
-
-    /**
-     * Corrida manual auditada (regla 12): {@code iniciar} registra la
-     * {@code EJECUCION_PROCESO} ({@code INICIADA}) y devuelve su id; {@code
-     * procesar} la procesa con ese id. Si cualquiera de los dos falla, audita
-     * {@code FALLO} en transacción propia (solo el tipo del error, sin su
-     * mensaje; {@value #ID_ENTIDAD_SIN_EJECUCION} si ni siquiera hubo id) y
-     * relanza. Si no, audita {@code EXITO} con los contadores de la
-     * respuesta. {@code accion} es {@code EJECUTAR_DETECCION_ATRASOS} o
-     * {@code EJECUTAR_ALERTAS_PREVENTIVAS}.
-     */
-    RespuestaEjecucion ejecutarManualAuditado(Usuario administrador, String accion, Supplier<Long> iniciar,
-            LongFunction<RespuestaEjecucion> procesar) {
-        Long idEjecucion = null;
-        RespuestaEjecucion respuesta;
-        try {
-            idEjecucion = iniciar.get();
-            respuesta = procesar.apply(idEjecucion);
+            respuesta = reenviar.get();
         } catch (RuntimeException ex) {
-            auditarFallo(administrador, accion, idEjecucion, ex);
+            auditarFallo(administrador, accion, null, ex);
             throw ex;
         }
-        servicioAuditoria.registrar(new EventoARegistrar(CodigosAlertas.MODULO,
-                CodigosTareas.TABLA_EJECUCION_PROCESO, String.valueOf(respuesta.idEjecucion()), null,
-                administrador.getIdUsuario(), accion, ResultadoAuditoria.EXITO,
-                Map.<String, Object>of("idEstado", respuesta.idEstado(), "cantidadCreada", respuesta.cantidadCreada(),
-                        "cantidadErrores", respuesta.cantidadErrores())));
+
+        Long idEjecucionDe = idEjecucion.apply(respuesta);
+        String idEntidad = idEjecucionDe == null ? ID_ENTIDAD_SIN_EJECUCION : String.valueOf(idEjecucionDe);
+        Map<String, Object> detalle = new LinkedHashMap<>(detalles.apply(respuesta));
+        ResultadoAuditoria resultado = ResultadoAuditoria.EXITO;
+        if (idEjecucionDe != null) {
+            Long idEstado = idEstadoDe(idEjecucionDe);
+            detalle.put("idEstado", idEstado);
+            if (idEstado != null && idEstado == idEstadoFallida()) {
+                resultado = ResultadoAuditoria.FALLO;
+            }
+        }
+        servicioAuditoria.registrar(new EventoARegistrar(CodigosAlertas.MODULO, CodigosTareas.TABLA_EJECUCION_PROCESO,
+                idEntidad, null, administrador.getIdUsuario(), accion, resultado, detalle));
         return respuesta;
     }
 
+    /**
+     * El {@code idEstado} vigente de la {@code EJECUCION_PROCESO}, o {@code
+     * null} si la fila todavía no existe o la relectura falla por cualquier
+     * otro motivo. Nunca lanza: deja un {@code LOG.warn} y devuelve {@code
+     * null}, porque a esta altura la corrida remota ya terminó y el
+     * administrador no debe recibir un error por un problema de esta
+     * relectura, puramente informativa para el detalle de la auditoría.
+     */
+    private Long idEstadoDe(long idEjecucion) {
+        try {
+            return registro.respuesta(idEjecucion).idEstado();
+        } catch (RuntimeException ex) {
+            LOG.warn("No se pudo releer la ejecución {} para agregar su idEstado a la auditoría: {}", idEjecucion,
+                    ex.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * Audita la corrida manual fallida, en transacción propia. Si todavía no
+     * hay un id de ejecución (la llamada falló antes de tenerlo), el id de
+     * entidad es {@value #ID_ENTIDAD_SIN_EJECUCION}. Nunca registra el
+     * mensaje de la excepción (podría traer datos del servicio remoto), solo
+     * su tipo; si es un error de un servicio externo ({@link
+     * ExcepcionServicioExterno}), agrega también el estado HTTP que se le
+     * devolvió al administrador.
+     */
     private void auditarFallo(Usuario administrador, String accion, Long idEjecucion, RuntimeException ex) {
         try {
+            Map<String, Object> detalle = new LinkedHashMap<>();
+            detalle.put("tipoError", ex.getClass().getSimpleName());
+            if (ex instanceof ExcepcionServicioExterno externo) {
+                detalle.put("estadoHttp", externo.getEstado().value());
+            }
             servicioAuditoria.registrarEnTransaccionPropia(new EventoARegistrar(CodigosAlertas.MODULO,
                     CodigosTareas.TABLA_EJECUCION_PROCESO,
                     idEjecucion == null ? ID_ENTIDAD_SIN_EJECUCION : String.valueOf(idEjecucion), null,
-                    administrador.getIdUsuario(), accion, ResultadoAuditoria.FALLO,
-                    Map.<String, Object>of("tipoError", ex.getClass().getSimpleName())));
+                    administrador.getIdUsuario(), accion, ResultadoAuditoria.FALLO, detalle));
         } catch (RuntimeException alAuditar) {
             ex.addSuppressed(alAuditar);
         }
+    }
+
+    private long idEstadoFallida() {
+        return servicioCatalogos.idEstado(CodigosTareas.TABLA_EJECUCION_PROCESO, CodigosTareas.CAMPO_ESTADO,
+                CodigosTareas.ESTADO_EJECUCION_FALLIDA);
     }
 }

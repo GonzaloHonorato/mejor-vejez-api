@@ -33,6 +33,7 @@ public final class CodigosAlertas {
     // Estados de INTENTO_NOTIFICACION.ESTADO_ENVIO
     // ------------------------------------------------------------------
 
+    public static final String ESTADO_ENVIO_PENDIENTE = "PENDIENTE";
     public static final String ESTADO_ENVIO_ENVIADO = "ENVIADO";
     public static final String ESTADO_ENVIO_FALLIDO = "FALLIDO";
 

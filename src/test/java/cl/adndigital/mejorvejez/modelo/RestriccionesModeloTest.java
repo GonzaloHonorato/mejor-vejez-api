@@ -3,6 +3,10 @@ package cl.adndigital.mejorvejez.modelo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.time.LocalDate;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +17,8 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 
 import cl.adndigital.mejorvejez.ConfiguracionTestcontainers;
 
@@ -170,6 +176,49 @@ class RestriccionesModeloTest {
                 "INSERT INTO TAREA_CUIDADO (TIPO_TAREA, ID_GRUPO, ID_ADULTO_MAYOR, TITULO_TAREA, "
                         + "FECHA_HORARIO, ID_ESTADO) VALUES ('MEDICAMENTOS', ?, ?, ?, SYSTIMESTAMP, ?)",
                 idGrupo, idAdulto, "Tarea de medicamento sin clave ni detalle", idEstadoPendiente));
+    }
+
+    @Test
+    void envioReporteUnicoPorGrupoYPeriodo() {
+        long idUsuario = fixtura.crearUsuario("uid-envio-reporte");
+        long idGrupo = fixtura.crearGrupo(idUsuario);
+        long idEstadoPendiente = fixtura.idEstado("ENVIO_REPORTE", "ESTADO", "PENDIENTE");
+        LocalDate inicioPeriodo = LocalDate.of(2026, 8, 31);
+
+        crearEnvioReporte(idGrupo, inicioPeriodo, idEstadoPendiente);
+
+        assertThrows(DuplicateKeyException.class,
+                () -> crearEnvioReporte(idGrupo, inicioPeriodo, idEstadoPendiente));
+    }
+
+    @Test
+    void ejecucionAceptaTipoReporteSemanal() {
+        long idEstadoIniciada = fixtura.idEstado("EJECUCION_PROCESO", "ESTADO", "INICIADA");
+
+        KeyHolder generadorDeClave = new GeneratedKeyHolder();
+        jdbcTemplate.update(conexion -> {
+            PreparedStatement sentencia = conexion.prepareStatement(
+                    "INSERT INTO EJECUCION_PROCESO (TIPO_EJECUCION, INICIO_VENTANA, FIN_VENTANA, ID_ESTADO) "
+                            + "VALUES ('REPORTE_SEMANAL', SYSTIMESTAMP, SYSTIMESTAMP, ?)",
+                    new String[] { "ID_EJECUCION" });
+            sentencia.setLong(1, idEstadoIniciada);
+            return sentencia;
+        }, generadorDeClave);
+        long idEjecucion = generadorDeClave.getKey().longValue();
+
+        // Filtra por la fila propia (la tabla es compartida entre pruebas): nunca se cuenta la tabla completa.
+        String tipoGuardado = jdbcTemplate.queryForObject(
+                "SELECT TIPO_EJECUCION FROM EJECUCION_PROCESO WHERE ID_EJECUCION = ?", String.class, idEjecucion);
+
+        assertThat(tipoGuardado).isEqualTo("REPORTE_SEMANAL");
+    }
+
+    private long crearEnvioReporte(long idGrupo, LocalDate inicioPeriodo, long idEstado) {
+        jdbcTemplate.update(
+                "INSERT INTO ENVIO_REPORTE (ID_GRUPO, INICIO_PERIODO, FIN_PERIODO, ID_ESTADO) VALUES (?, ?, ?, ?)",
+                idGrupo, Date.valueOf(inicioPeriodo), Date.valueOf(inicioPeriodo.plusDays(6)), idEstado);
+        return jdbcTemplate.queryForObject(
+                "SELECT MAX(ID_ENVIO) FROM ENVIO_REPORTE WHERE ID_GRUPO = ?", Long.class, idGrupo);
     }
 
     private long crearContacto(long idAdulto, long idCreador, String esPrincipal, long idEstado) {

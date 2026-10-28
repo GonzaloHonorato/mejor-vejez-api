@@ -2,10 +2,9 @@ package cl.adndigital.mejorvejez.notificaciones;
 
 /**
  * Valores exactos (canales y nombre de módulo) del módulo {@code
- * notificaciones} (TSA-45/TSA-46). Públicas: {@link EnviadorCorreo}, {@link
- * EnviadorWhatsApp} y los servicios siguientes de la Fase 5 (Tarea 3 en
- * adelante) las comparten como única fuente de verdad, igual que {@code
- * alertas.CodigosAlertas}.
+ * notificaciones} (TSA-45/TSA-46). Pública: {@link ServicioCanales} y los
+ * módulos que resuelven canales operativos ({@code interno}) la comparten
+ * como única fuente de verdad, igual que {@code alertas.CodigosAlertas}.
  */
 public final class CodigosNotificaciones {
 
