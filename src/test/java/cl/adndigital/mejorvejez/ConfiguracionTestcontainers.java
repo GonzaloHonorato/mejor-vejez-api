@@ -2,8 +2,12 @@ package cl.adndigital.mejorvejez;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.oracle.OracleContainer;
+
+import cl.adndigital.mejorvejez.cuentas.EjecutorRecuperarClave;
+import cl.adndigital.mejorvejez.cuentas.ProveedorIdentidadFalso;
 
 /**
  * Oracle Free real en UN SOLO contenedor, compartido por TODOS los contextos
@@ -42,7 +46,15 @@ import org.testcontainers.oracle.OracleContainer;
  * identificadores únicos ({@code UUID}) y filtrar sus consultas y
  * aserciones por esos datos propios, nunca contar o leer la tabla completa.
  *
- * <p>Uso: {@code @Import(ConfiguracionTestcontainers.class)}.
+ * <p>Uso: {@code @Import(ConfiguracionTestcontainers.class)}. Por la misma
+ * razón (un solo contexto de pruebas compartido en vez de uno nuevo por
+ * configuración), esta clase también registra {@link ProveedorIdentidadFalso}
+ * como {@code @Primary}: así todo contexto que importe esta configuración
+ * recibe el proveedor de identidad en memoria en vez de intentar levantar
+ * {@code ConfiguracionFirebase} (sin credencial en las pruebas, expondría
+ * {@code ProveedorIdentidadNoConfigurado}, que no sirve para probar las
+ * rutas de cuentas). Cada prueba que lo use debe limpiarlo en su
+ * {@code @BeforeEach} con {@link ProveedorIdentidadFalso#limpiar()}.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class ConfiguracionTestcontainers {
@@ -62,5 +74,28 @@ public class ConfiguracionTestcontainers {
             registry.add("spring.datasource.password", ORACLE_COMPARTIDO::getPassword);
             registry.add("spring.datasource.driver-class-name", () -> "oracle.jdbc.OracleDriver");
         };
+    }
+
+    @Bean
+    @Primary
+    ProveedorIdentidadFalso proveedorIdentidadFalso() {
+        return new ProveedorIdentidadFalso();
+    }
+
+    /**
+     * Reemplaza (por tipo, el único {@link EjecutorRecuperarClave} del
+     * contexto) el executor acotado de {@code ServicioRecuperarClave} por
+     * uno síncrono (corre en el mismo hilo del llamador): así las pruebas
+     * pueden verificar el envío sin depender de temporización ni de
+     * {@code Awaitility}. Al envolver un {@code Runnable::run} y no un
+     * {@code Executor} expuesto directamente, tampoco interfiere con el
+     * {@code applicationTaskExecutor} que Spring Boot le da a cualquier
+     * {@code @Async} de la aplicación (ver Javadoc de {@code
+     * EjecutorRecuperarClave}).
+     */
+    @Bean
+    @Primary
+    EjecutorRecuperarClave ejecutorRecuperarClaveSincrono() {
+        return new EjecutorRecuperarClave(Runnable::run);
     }
 }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,10 +28,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
+import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
+import cl.adndigital.mejorvejez.comun.ExcepcionCuentasNoConfiguradas;
 import cl.adndigital.mejorvejez.comun.ManejadorErrores;
 import cl.adndigital.mejorvejez.comun.ZonaNegocio;
 import cl.adndigital.mejorvejez.configuracion.ConfiguracionCors;
 import cl.adndigital.mejorvejez.configuracion.ConfiguracionSeguridad;
+import cl.adndigital.mejorvejez.cuentas.CuentaCreada;
+import cl.adndigital.mejorvejez.cuentas.ServicioAltaCuentas;
 import cl.adndigital.mejorvejez.seguridad.ManejadorErroresSeguridad;
 
 @WebMvcTest(ControladorUsuarios.class)
@@ -42,6 +47,9 @@ class ControladorUsuariosTest {
 
     @MockitoBean
     private ServicioAdministracionUsuarios servicio;
+
+    @MockitoBean
+    private ServicioAltaCuentas servicioAltaCuentas;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;
@@ -107,5 +115,92 @@ class ControladorUsuariosTest {
                         .value(ZonaNegocio.enZona(fechaActualizacionUtc).toString()))
                 .andExpect(jsonPath("$.elementos[0].fechaCreacion", not(containsString("Z"))))
                 .andExpect(jsonPath("$.elementos[0].fechaActualizacion", not(containsString("Z"))));
+    }
+
+    // ------------------------------------------------------------------
+    // Alta de cuentas y reenvío de accesos (HU-01)
+    // ------------------------------------------------------------------
+
+    @Test
+    void crearCuentaDevuelve201ConLaClaveYElUsuario() throws Exception {
+        Usuario usuario = new Usuario("uid-nuevo", "ana@correo.cl", "Ana", "+56912345678", 1L, OffsetDateTime.now());
+        ReflectionTestUtils.setField(usuario, "idUsuario", 7L);
+        when(servicioAltaCuentas.crearCuenta("Ana", "ana@correo.cl", "+56912345678"))
+                .thenReturn(new CuentaCreada(usuario, "Clave-Temporal-1", true));
+
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\",\"telefono\":\"+56912345678\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.usuario.email").value("ana@correo.cl"))
+                .andExpect(jsonPath("$.claveTemporal").value("Clave-Temporal-1"))
+                .andExpect(jsonPath("$.correoEnviado").value(true));
+    }
+
+    @Test
+    void crearCuentaSinNombreDevuelve400() throws Exception {
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"ana@correo.cl\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("nombre"));
+    }
+
+    @Test
+    void crearCuentaExigeToken() throws Exception {
+        mockMvc.perform(post("/api/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void crearCuentaRecortaElCorreoAntesDeValidarlo() throws Exception {
+        Usuario usuario = new Usuario("uid-nuevo", "ana@correo.cl", "Ana", 1L, OffsetDateTime.now());
+        ReflectionTestUtils.setField(usuario, "idUsuario", 7L);
+        when(servicioAltaCuentas.crearCuenta("Ana", "Ana@Correo.CL", null))
+                .thenReturn(new CuentaCreada(usuario, "Clave-Temporal-1", true));
+
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"  Ana@Correo.CL \"}"))
+                .andExpect(status().isCreated());
+
+        verify(servicioAltaCuentas).crearCuenta("Ana", "Ana@Correo.CL", null);
+    }
+
+    @Test
+    void crearCuentaConCorreoExistenteDevuelve409ConDetailEnEspanol() throws Exception {
+        when(servicioAltaCuentas.crearCuenta("Ana", "ana@correo.cl", null))
+                .thenThrow(new ExcepcionConflicto("Ya existe una cuenta con ese correo"));
+
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Ya existe una cuenta con ese correo"));
+    }
+
+    @Test
+    void crearCuentaSinCredencialDevuelve503ConDetailEnEspanol() throws Exception {
+        when(servicioAltaCuentas.crearCuenta("Ana", "ana@correo.cl", null))
+                .thenThrow(new ExcepcionCuentasNoConfiguradas());
+
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.detail").value("La creación de cuentas no está configurada"));
+    }
+
+    @Test
+    void reenviarAccesoDevuelve200ConLaClaveNueva() throws Exception {
+        Usuario usuario = new Usuario("uid-existente", "ana@correo.cl", "Ana", 1L, OffsetDateTime.now());
+        when(servicioAltaCuentas.reenviarAcceso(7L)).thenReturn(new CuentaCreada(usuario, "Clave-Temporal-2", false));
+
+        mockMvc.perform(post("/api/usuarios/7/reenviar-acceso").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.claveTemporal").value("Clave-Temporal-2"))
+                .andExpect(jsonPath("$.correoEnviado").value(false));
     }
 }

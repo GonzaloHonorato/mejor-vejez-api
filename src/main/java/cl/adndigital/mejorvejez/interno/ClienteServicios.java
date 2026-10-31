@@ -47,6 +47,12 @@ import tools.jackson.databind.json.JsonMapper;
  * rechazada) se traduce en 503 con un mensaje fijo por servicio: quien
  * llama no necesita distinguir la causa exacta, solo que el servicio no
  * respondió.
+ *
+ * <p>{@link #enviarCorreoCuentaNueva} y {@link #enviarCorreoRecuperarClave}
+ * (HU-01) son distintos: nunca lanzan. Ante cualquier falla de Alertas
+ * devuelven {@code false} y solo dejan un log de advertencia sin datos
+ * sensibles (nunca la contraseña ni el enlace de restablecimiento); quien
+ * llama decide qué hacer con la cuenta ya creada.
  */
 @Component
 public class ClienteServicios {
@@ -66,20 +72,26 @@ public class ClienteServicios {
     private static final String RUTA_DETECCION_ATRASOS = "/api/interno/procesos/deteccion-atrasos";
     private static final String RUTA_ALERTAS_PREVENTIVAS = "/api/interno/procesos/alertas-preventivas";
     private static final String RUTA_REPORTE_SEMANAL = "/api/interno/procesos/reporte-semanal";
+    private static final String RUTA_CORREO_CUENTA_NUEVA = "/api/interno/correos/cuenta-nueva";
+    private static final String RUTA_CORREO_RECUPERAR_CLAVE = "/api/interno/correos/recuperar-clave";
+    private static final String RUTA_INGRESO = "/ingreso";
 
     private final RestClient clienteAlertas;
     private final RestClient clienteReportes;
     private final JsonMapper jsonMapper;
+    private final String urlIngreso;
 
     public ClienteServicios(@Value("${mejorvejez.servicios.alertas-url}") String urlAlertas,
             @Value("${mejorvejez.servicios.reportes-url}") String urlReportes,
             @Value("${mejorvejez.interno.clave-servicio}") String claveServicio,
             @Value("${mejorvejez.servicios.alertas-timeout-seg}") int timeoutLecturaAlertasSegundos,
             @Value("${mejorvejez.servicios.reportes-timeout-seg}") int timeoutLecturaReportesSegundos,
+            @Value("${mejorvejez.app-url}") String appUrl,
             JsonMapper jsonMapper) {
         this.clienteAlertas = construirCliente(urlAlertas, claveServicio, timeoutLecturaAlertasSegundos);
         this.clienteReportes = construirCliente(urlReportes, claveServicio, timeoutLecturaReportesSegundos);
         this.jsonMapper = jsonMapper;
+        this.urlIngreso = appUrl + RUTA_INGRESO;
     }
 
     /** Reenvía {@code POST /api/interno/procesos/deteccion-atrasos} a Alertas. */
@@ -104,6 +116,51 @@ public class ClienteServicios {
                     : clienteReportes.post().uri(RUTA_REPORTE_SEMANAL + "?inicio={inicio}", inicio);
             return peticion.retrieve().body(ResumenReportes.class);
         }, MENSAJE_REPORTES_NO_DISPONIBLE, MENSAJE_REPORTES_TIMEOUT_LECTURA);
+    }
+
+    /**
+     * Pide a Alertas el correo de cuenta nueva (HU-01), con {@code
+     * urlIngreso = mejorvejez.app-url + "/ingreso"}. Nunca lanza: ante
+     * cualquier falla (Alertas caído, timeout, respuesta inesperada)
+     * devuelve {@code false} sin detener el alta de la cuenta, que ya se
+     * guardó.
+     */
+    public boolean enviarCorreoCuentaNueva(String nombre, String email, String clave) {
+        SolicitudCorreoCuentaNueva solicitud = new SolicitudCorreoCuentaNueva(nombre, email, clave, urlIngreso);
+        return enviarCorreoSinLanzar(
+                () -> clienteAlertas.post().uri(RUTA_CORREO_CUENTA_NUEVA).body(solicitud).retrieve()
+                        .body(RespuestaCorreo.class),
+                "cuenta nueva");
+    }
+
+    /**
+     * Pide a Alertas el correo de recuperación de contraseña (HU-01).
+     * Nunca lanza: ante cualquier falla devuelve {@code false}.
+     */
+    public boolean enviarCorreoRecuperarClave(String nombre, String email, String enlace) {
+        SolicitudCorreoRecuperarClave solicitud = new SolicitudCorreoRecuperarClave(nombre, email, enlace);
+        return enviarCorreoSinLanzar(
+                () -> clienteAlertas.post().uri(RUTA_CORREO_RECUPERAR_CLAVE).body(solicitud).retrieve()
+                        .body(RespuestaCorreo.class),
+                "recuperar clave");
+    }
+
+    /**
+     * Ejecuta {@code llamada} sin dejar escapar ninguna excepción: la
+     * contraseña temporal y el enlace de restablecimiento nunca deben
+     * aparecer en un log, así que ante cualquier falla solo se registra
+     * {@code tipoCorreo} (una descripción fija, sin datos de la solicitud
+     * ni la causa de la excepción).
+     */
+    private boolean enviarCorreoSinLanzar(Supplier<RespuestaCorreo> llamada, String tipoCorreo) {
+        try {
+            RespuestaCorreo respuesta = llamada.get();
+            return respuesta != null && respuesta.enviado();
+        } catch (RuntimeException excepcion) {
+            LOG.warn("No se pudo enviar el correo de {} por Alertas; la cuenta sigue su curso sin ese correo.",
+                    tipoCorreo);
+            return false;
+        }
     }
 
     private <T> T invocar(Supplier<T> llamada, String mensajeNoDisponible, String mensajeTimeoutLectura) {

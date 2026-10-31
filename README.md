@@ -34,8 +34,14 @@ La aplicación web (`mejor-vejez-web`, puerto 4200) solo habla con este core.
 | GET | `/api/yo` | token | `200` con el usuario autenticado; lo da de alta en su primer ingreso |
 | GET | `/api/catalogos/estados?tabla=&campo=` | token | `200` con los estados de ese campo, p. ej. `?tabla=USUARIO&campo=ESTADO` |
 | GET | `/api/catalogos/opciones?tipo=` | token | `200` con las opciones del tipo (`PRESENTACION_MEDICAMENTO`, `UNIDAD_DOSIS`, `DIA_SEMANA`) |
+| POST | `/api/usuarios` | administrador | `201` crea la cuenta (Firebase + core) y devuelve la contraseña temporal una sola vez |
+| POST | `/api/usuarios/{id}/reenviar-acceso` | administrador | `200` fija una contraseña temporal nueva, la envía por correo y la devuelve una vez |
+| POST | `/api/grupos/{idGrupo}/integrantes/nuevo` | coordinador del grupo o administrador | `201` crea la cuenta del integrante y lo suma al grupo; `429` si un coordinador (no administrador) supera 20 altas en 60 min |
+| POST | `/api/publico/recuperar-clave` | pública | `202` siempre (exista o no el correo); `429` si se superan 3 pedidos por correo o 10 por IP en 60 min |
 
-Todo lo que no es `/api/salud` exige `Authorization: Bearer <ID token de Firebase>` → `401` sin él.
+Todo lo que no es `/api/salud` ni `/api/publico/**` exige `Authorization: Bearer <ID token de Firebase>` → `401` sin él.
+
+En la creación de cuentas, un correo que ya existe (en el core o en Firebase) responde `409` "Ya existe una cuenta con ese correo", y sin `FIREBASE_CREDENCIALES_BASE64` responde `503` "La creación de cuentas no está configurada". La contraseña temporal nunca se guarda ni aparece en logs ni en la auditoría; si Alertas no responde, la cuenta se crea igual y la respuesta trae `correoEnviado=false`.
 
 ### `GET /api/yo`
 
@@ -67,8 +73,10 @@ nombres internos.
 
 El ID token se valida como JWT (`spring-boot-starter-security-oauth2-resource-server`):
 firma con las llaves públicas de Google, `iss = https://securetoken.google.com/<project>`
-y `aud = <project>`. Sólo hace falta `FIREBASE_PROJECT_ID`; **no** se necesita cuenta de
-servicio. En un controller, el usuario sale de `@AuthenticationPrincipal Jwt jwt`
+y `aud = <project>`. Para validar tokens sólo hace falta `FIREBASE_PROJECT_ID`. La cuenta de
+servicio (`FIREBASE_CREDENCIALES_BASE64`) solo se usa con el SDK de
+administración para crear cuentas, reenviar accesos y generar el enlace de
+recuperación de contraseña. En un controller, el usuario sale de `@AuthenticationPrincipal Jwt jwt`
 (`jwt.getSubject()` = uid de Firebase, `jwt.getClaimAsString("email")`).
 
 ## Variables
@@ -86,11 +94,23 @@ servicio. En un controller, el usuario sale de `@AuthenticationPrincipal Jwt jwt
 | `REPORTES_URL` | no | def. `http://localhost:8082` (local) / `http://mejor-vejez-reportes:8082` (Dokploy). URL interna del microservicio de reportes |
 | `ALERTAS_TIMEOUT_SEG` | no | def. `120`. Timeout de LECTURA (en segundos) al llamar a Alertas; la conexión usa 5 s fijos. Si se agota, la corrida manual responde 504 (no 503): el servicio no respondió a tiempo, pero la corrida remota puede seguir en curso |
 | `REPORTES_TIMEOUT_SEG` | no | def. `600`. Lo mismo que `ALERTAS_TIMEOUT_SEG`, pero para Reportes (un reporte semanal con varios grupos puede tardar varios minutos) |
+| `FIREBASE_CREDENCIALES_BASE64` | no | **secreto**. JSON de la cuenta de servicio de Firebase en base64. Sin ella el core arranca igual y crear cuentas / reenviar accesos responde `503` (recuperar contraseña responde `202` sin enviar nada y deja un aviso en el log). Si viene pero no es válida, o su `project_id` no es `FIREBASE_PROJECT_ID`, el core no arranca |
+| `APP_URL` | no | def. `http://localhost:4200` (local) / `https://mejor-vejez-app.adndigital.cl` (compose de Dokploy). URL pública de la web: el correo de cuenta nueva apunta a `{APP_URL}/ingreso` y el de recuperación a `{APP_URL}/restablecer-clave#codigo=…` (el código va en el fragmento para que no quede en los logs de los servidores) |
 
 > El envío de correos (SMTP) y la generación de reportes en PDF ya no viven
 > acá: desde la Fase 9 los hacen `mejor-vejez-alertas` y `mejor-vejez-reportes`
-> (sus variables `MAIL_*` y `APP_URL` están en el README y el `.env.example`
-> de `mejor-vejez-alertas`).
+> (sus variables `MAIL_*` están en el README y el `.env.example` de
+> `mejor-vejez-alertas`). Los correos de cuenta nueva y de recuperación de
+> contraseña también los envía Alertas, a pedido del core.
+
+### Cuenta de servicio de Firebase en base64
+
+Consola de Firebase → Configuración del proyecto → **Cuentas de servicio** →
+**Generar nueva clave privada** (descarga un JSON). No versionarlo:
+
+```sh
+base64 -i mejor-vejez-app-firebase-adminsdk.json | tr -d '\n' | pbcopy
+```
 
 ### Wallet en base64
 
@@ -180,6 +200,9 @@ App de tipo **Compose** apuntando a este repo, archivo `docker-compose.yml`.
 1. **Environment:** las variables de arriba. `CLAVE_SERVICIO` es obligatoria
    y debe ser **la misma** que en `mejor-vejez-alertas` y
    `mejor-vejez-reportes` (se la define una vez y se copia en los tres).
+   Para crear cuentas y recuperar contraseñas agregar también
+   `FIREBASE_CREDENCIALES_BASE64` (secreto) y `APP_URL`
+   (`https://mejor-vejez-app.adndigital.cl`).
 2. **Domains:** servicio `mejor-vejez-api`, puerto `8080`, host
    `mejor-vejez-api.adndigital.cl`, HTTPS (Let's Encrypt). Es el único de los
    tres microservicios con dominio público.

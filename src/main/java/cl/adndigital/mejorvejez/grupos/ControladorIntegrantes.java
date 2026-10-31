@@ -49,6 +49,22 @@ public class ControladorIntegrantes {
                 .body(creado);
     }
 
+    /**
+     * Crea una cuenta nueva y la incorpora al grupo de una vez (el
+     * coordinador del grupo o el administrador): la autorización, la
+     * validación del rol y el alta de la cuenta los exige {@link
+     * ServicioIntegrantes}.
+     */
+    @PostMapping("/integrantes/nuevo")
+    public ResponseEntity<RespuestaIntegranteCreado> crearIntegrante(@PathVariable long idGrupo,
+            @Valid @RequestBody SolicitudCrearIntegrante solicitud) {
+        RespuestaIntegranteCreado creado = servicio.crearIntegrante(idGrupo, solicitud.nombre(), solicitud.email(),
+                solicitud.idRol());
+        return ResponseEntity
+                .created(URI.create("/api/grupos/" + idGrupo + "/integrantes/" + creado.integrante().idIntegrante()))
+                .body(creado);
+    }
+
     @PutMapping("/integrantes/{idIntegrante}/rol")
     public RespuestaIntegrante cambiarRol(@PathVariable long idGrupo, @PathVariable long idIntegrante,
             @Valid @RequestBody SolicitudCambiarRol solicitud) {

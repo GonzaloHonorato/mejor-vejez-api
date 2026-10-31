@@ -40,6 +40,16 @@ public class ControladorPruebaErrores {
         throw new ExcepcionAccesoDenegado("No tiene permisos para esta operación.");
     }
 
+    @GetMapping("/cuentas-no-configuradas")
+    public void cuentasNoConfiguradas() {
+        throw new ExcepcionCuentasNoConfiguradas();
+    }
+
+    @GetMapping("/demasiados-intentos")
+    public void demasiadosIntentos() {
+        throw new ExcepcionDemasiadosIntentos();
+    }
+
     @PostMapping("/validacion")
     public void validacion(@Valid @RequestBody SolicitudPrueba solicitud) {
         // No hace nada: @Valid dispara MethodArgumentNotValidException antes

@@ -73,6 +73,16 @@ public class Usuario {
     }
 
     /**
+     * Usuario nuevo, no administrador, con teléfono (alta de cuentas,
+     * HU-01): {@code telefono} nulo o en blanco no se guarda.
+     */
+    public Usuario(String uidFirebase, String email, String nombre, String telefono, long idEstado,
+            OffsetDateTime fechaCreacion) {
+        this(uidFirebase, email, nombre, idEstado, fechaCreacion);
+        this.telefono = (telefono == null || telefono.isBlank()) ? null : telefono.trim();
+    }
+
+    /**
      * Actualiza nombre y teléfono del perfil ({@code PATCH /api/yo}).
      * {@code nombre} se guarda sin espacios en los extremos; {@code
      * telefono} nulo o en blanco borra el teléfono guardado.

@@ -9,8 +9,12 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import cl.adndigital.mejorvejez.comun.ClaveServicio;
@@ -78,6 +82,7 @@ public class ConfiguracionSeguridad {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/salud").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/publico/**").permitAll()
                 .anyRequest().authenticated()
             )
             .exceptionHandling(exceptions -> exceptions
@@ -87,10 +92,27 @@ public class ConfiguracionSeguridad {
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable())
             .oauth2ResourceServer(oauth2 -> oauth2
+                .bearerTokenResolver(resolverDeTokenSinRutasPublicas())
                 .authenticationEntryPoint(manejadorErroresSeguridad)
                 .accessDeniedHandler(manejadorErroresSeguridad)
                 .jwt(Customizer.withDefaults())
             );
         return http.build();
+    }
+
+    /**
+     * Un {@code Authorization: Bearer <token>} inválido o vencido no debe
+     * romper {@code /api/publico/**}: por omisión, el filtro del resource
+     * server intenta autenticar CUALQUIER request que traiga esa cabecera,
+     * sin importar si la ruta exige token, y un token inválido ahí dispara
+     * un 401 antes de llegar a la decisión de {@code permitAll}. Para esas
+     * rutas, este resolver devuelve {@code null} (como si no hubiera
+     * token), así el filtro nunca intenta autenticar y la petición sigue
+     * como anónima.
+     */
+    private static BearerTokenResolver resolverDeTokenSinRutasPublicas() {
+        BearerTokenResolver resolverPorOmision = new DefaultBearerTokenResolver();
+        RequestMatcher rutasPublicas = PathPatternRequestMatcher.pathPattern("/api/publico/**");
+        return request -> rutasPublicas.matches(request) ? null : resolverPorOmision.resolve(request);
     }
 }

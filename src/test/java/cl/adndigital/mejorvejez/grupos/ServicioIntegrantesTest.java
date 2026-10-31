@@ -3,9 +3,15 @@ package cl.adndigital.mejorvejez.grupos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,12 +27,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import cl.adndigital.mejorvejez.ConfiguracionTestcontainers;
+import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
 import cl.adndigital.mejorvejez.comun.ExcepcionAccesoDenegado;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
+import cl.adndigital.mejorvejez.comun.ExcepcionDemasiadosIntentos;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
+import cl.adndigital.mejorvejez.cuentas.ProveedorIdentidadFalso;
+import cl.adndigital.mejorvejez.interno.ClienteServicios;
 import cl.adndigital.mejorvejez.modelo.FixturaModelo;
 import cl.adndigital.mejorvejez.tareas.FixturaTareas;
 
@@ -53,16 +65,28 @@ class ServicioIntegrantesTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private ProveedorIdentidadFalso proveedorFalso;
+
+    @MockitoBean
+    private ClienteServicios clienteServicios;
+
+    @MockitoSpyBean
+    private ServicioAuditoria servicioAuditoria;
+
     private FixturaGrupos fixtura;
 
     @BeforeEach
     void prepararFixtura() {
         fixtura = new FixturaGrupos(jdbcTemplate);
+        proveedorFalso.limpiar();
+        when(clienteServicios.enviarCorreoCuentaNueva(any(), any(), any())).thenReturn(true);
     }
 
     @AfterEach
     void limpiarContexto() {
         SecurityContextHolder.clearContext();
+        proveedorFalso.limpiar();
     }
 
     @Test
@@ -222,6 +246,189 @@ class ServicioIntegrantesTest {
 
         assertThatThrownBy(() -> servicio.incorporar(idGrupoA, correoNuevo, idRol("COLABORADOR")))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
+    }
+
+    // ------------------------------------------------------------------
+    // Alta de un integrante con cuenta nueva (HU-01)
+    // ------------------------------------------------------------------
+
+    @Test
+    void coordinadorCreaIntegranteConCuentaYRol() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uidCoordinador);
+        String email = correoUnico();
+
+        RespuestaIntegranteCreado creado = servicio.crearIntegrante(idGrupo, "Ana Nueva", email, idRol("COLABORADOR"));
+
+        assertThat(creado.integrante().email()).isEqualTo(email);
+        assertThat(creado.integrante().nombreRol()).isEqualTo("COLABORADOR");
+        assertThat(creado.integrante().fechaDesactivacion()).isNull();
+        assertThat(creado.claveTemporal()).isNotBlank();
+        assertThat(creado.correoEnviado()).isTrue();
+
+        Long idUsuarioNuevo = jdbcTemplate.queryForObject("SELECT ID_USUARIO FROM USUARIO WHERE EMAIL = ?",
+                Long.class, email);
+        String uidNuevo = jdbcTemplate.queryForObject("SELECT UID_FIREBASE FROM USUARIO WHERE ID_USUARIO = ?",
+                String.class, idUsuarioNuevo);
+        assertThat(proveedorFalso.claveActualDe(uidNuevo)).isEqualTo(creado.claveTemporal());
+
+        List<Map<String, Object>> eventosIncorporar = jdbcTemplate.queryForList(
+                "SELECT ID_USUARIO_ACTOR FROM EVENTO_AUDITORIA "
+                        + "WHERE TIPO_ENTIDAD = 'INTEGRANTE_GRUPO' AND ID_ENTIDAD = ? AND CODIGO_ACCION = 'INCORPORAR_INTEGRANTE'",
+                String.valueOf(creado.integrante().idIntegrante()));
+        assertThat(eventosIncorporar).hasSize(1);
+        assertThat(((Number) eventosIncorporar.get(0).get("ID_USUARIO_ACTOR")).longValue()).isEqualTo(idCoordinador);
+
+        List<Map<String, Object>> eventosCrearCuenta = jdbcTemplate.queryForList(
+                "SELECT ID_USUARIO_ACTOR FROM EVENTO_AUDITORIA "
+                        + "WHERE TIPO_ENTIDAD = 'USUARIO' AND ID_ENTIDAD = ? AND CODIGO_ACCION = 'CREAR_CUENTA'",
+                String.valueOf(idUsuarioNuevo));
+        assertThat(eventosCrearCuenta).hasSize(1);
+        assertThat(((Number) eventosCrearCuenta.get(0).get("ID_USUARIO_ACTOR")).longValue()).isEqualTo(idCoordinador);
+    }
+
+    @Test
+    void colaboradorNoPuedeCrearIntegrante403() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+
+        String uidColaborador = FixturaGrupos.uidUnico();
+        long idColaborador = fixtura.crearUsuario(uidColaborador, false);
+        fixtura.agregarIntegrante(idGrupo, idColaborador, "COLABORADOR", "ACTIVO");
+        autenticar(uidColaborador);
+        String email = correoUnico();
+
+        assertThatThrownBy(() -> servicio.crearIntegrante(idGrupo, "Ana", email, idRol("COLABORADOR")))
+                .isInstanceOf(ExcepcionAccesoDenegado.class);
+
+        assertThat(proveedorFalso.buscarPorCorreo(email)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM USUARIO WHERE EMAIL = ?", Long.class, email))
+                .isZero();
+    }
+
+    @Test
+    void correoExistenteDa409() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uidCoordinador);
+
+        long idYaExistente = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);
+        String correoExistente = correoDe(idYaExistente);
+
+        assertThatThrownBy(() -> servicio.crearIntegrante(idGrupo, "Ana", correoExistente, idRol("COLABORADOR")))
+                .isInstanceOf(ExcepcionConflicto.class)
+                .hasMessage("Ya existe una cuenta con ese correo");
+    }
+
+    @Test
+    void rolInexistenteNoDejaCuentaCreada() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uidCoordinador);
+        String email = correoUnico();
+
+        assertThatThrownBy(() -> servicio.crearIntegrante(idGrupo, "Ana", email, idRolInexistente()))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El rol indicado no existe");
+
+        assertThat(proveedorFalso.buscarPorCorreo(email)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM USUARIO WHERE EMAIL = ?", Long.class, email))
+                .isZero();
+    }
+
+    @Test
+    void adminPuedeCrearIntegranteEnCualquierGrupo() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+
+        String uidAdmin = FixturaGrupos.uidUnico();
+        long idAdmin = fixtura.crearUsuario(uidAdmin, true);
+        autenticar(uidAdmin);
+        String email = correoUnico();
+
+        RespuestaIntegranteCreado creado = servicio.crearIntegrante(idGrupo, "Ana", email, idRol("COLABORADOR"));
+
+        assertThat(creado.integrante().email()).isEqualTo(email);
+
+        List<Map<String, Object>> eventos = jdbcTemplate.queryForList(
+                "SELECT ID_USUARIO_ACTOR FROM EVENTO_AUDITORIA "
+                        + "WHERE TIPO_ENTIDAD = 'INTEGRANTE_GRUPO' AND ID_ENTIDAD = ? AND CODIGO_ACCION = 'INCORPORAR_INTEGRANTE'",
+                String.valueOf(creado.integrante().idIntegrante()));
+        assertThat(eventos).hasSize(1);
+        assertThat(((Number) eventos.get(0).get("ID_USUARIO_ACTOR")).longValue()).isEqualTo(idAdmin);
+    }
+
+    @Test
+    void fallaAlIncorporarBorraLaCuentaDeFirebaseYNoDejaUsuario() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uidCoordinador);
+        String email = correoUnico();
+        doThrow(new RuntimeException("Falla simulada al incorporar")).when(servicioAuditoria)
+                .registrar(argThat(evento -> evento != null && "INCORPORAR_INTEGRANTE".equals(evento.codigoAccion())
+                        && Long.valueOf(idGrupo).equals(evento.idGrupo())));
+
+        assertThatThrownBy(() -> servicio.crearIntegrante(idGrupo, "Ana", email, idRol("COLABORADOR")))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Falla simulada al incorporar");
+
+        assertThat(proveedorFalso.buscarPorCorreo(email)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM USUARIO WHERE EMAIL = ?", Long.class, email))
+                .isZero();
+    }
+
+    @Test
+    void coordinadorQueSuperaElLimiteDeAltasRecibe429SinTocarElProveedor() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uidCoordinador);
+        for (int i = 0; i < 20; i++) {
+            servicio.crearIntegrante(idGrupo, "Persona " + i, correoUnico(), idRol("COLABORADOR"));
+        }
+        // Si el alta llegara al proveedor, fallaría con otro error: el 429 prueba que no se lo llamó.
+        proveedorFalso.forzarErrorAlBuscar(new IllegalStateException("No se debía consultar el proveedor"));
+        proveedorFalso.forzarErrorAlCrear(new IllegalStateException("No se debía crear la cuenta"));
+        String email = correoUnico();
+
+        assertThatThrownBy(() -> servicio.crearIntegrante(idGrupo, "Persona 21", email, idRol("COLABORADOR")))
+                .isInstanceOf(ExcepcionDemasiadosIntentos.class)
+                .hasMessage("Demasiados intentos. Prueba más tarde.");
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM USUARIO WHERE EMAIL = ?", Long.class, email))
+                .isZero();
+    }
+
+    @Test
+    void administradorNoTieneLimiteDeAltas() {
+        String uidCoordinador = FixturaGrupos.uidUnico();
+        long idCoordinador = fixtura.crearUsuario(uidCoordinador, false);
+        long idGrupo = fixtura.crearGrupo(idCoordinador);
+        fixtura.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        String uidAdmin = FixturaGrupos.uidUnico();
+        fixtura.crearUsuario(uidAdmin, true);
+        autenticar(uidAdmin);
+
+        for (int i = 0; i < 21; i++) {
+            servicio.crearIntegrante(idGrupo, "Persona " + i, correoUnico(), idRol("COLABORADOR"));
+        }
+
+        assertThat(servicio.crearIntegrante(idGrupo, "Persona 22", correoUnico(), idRol("COLABORADOR"))
+                .integrante().nombreRol()).isEqualTo("COLABORADOR");
     }
 
     @Test
@@ -660,6 +867,15 @@ class ServicioIntegrantesTest {
 
     private long idRol(String nombreRol) {
         return repositorioRol.findByNombreRol(nombreRol).orElseThrow().getIdRol();
+    }
+
+    private long idRolInexistente() {
+        Long maximo = jdbcTemplate.queryForObject("SELECT MAX(ID_ROL) FROM ROL_GRUPO", Long.class);
+        return (maximo == null ? 0L : maximo) + 1_000_000L;
+    }
+
+    private String correoUnico() {
+        return "integrante-" + UUID.randomUUID() + "@mejorvejez.test";
     }
 
     private long idEstado(String tabla, String campo, String codigo) {

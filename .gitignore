@@ -41,3 +41,6 @@ wallet.b64
 Wallet_*/
 Wallet_*
 .DS_Store
+
+# Cuenta de servicio de Firebase (secreto)
+*firebase-adminsdk*.json

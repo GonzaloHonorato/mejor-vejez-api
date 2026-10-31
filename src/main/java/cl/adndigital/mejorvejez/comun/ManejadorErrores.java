@@ -71,6 +71,16 @@ public class ManejadorErrores {
         return construirProblema(HttpStatus.FORBIDDEN, ExcepcionAccesoDenegado.TITULO, excepcion.getMessage());
     }
 
+    @ExceptionHandler(ExcepcionCuentasNoConfiguradas.class)
+    public ProblemDetail manejarCuentasNoConfiguradas(ExcepcionCuentasNoConfiguradas excepcion) {
+        return construirProblema(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible", excepcion.getMessage());
+    }
+
+    @ExceptionHandler(ExcepcionDemasiadosIntentos.class)
+    public ProblemDetail manejarDemasiadosIntentos(ExcepcionDemasiadosIntentos excepcion) {
+        return construirProblema(HttpStatus.TOO_MANY_REQUESTS, "Demasiados intentos", excepcion.getMessage());
+    }
+
     /**
      * Error de una llamada interna a Alertas o a Reportes ({@code
      * ClienteServicios}): conserva el código y el detalle que trae la

@@ -38,6 +38,7 @@ class ClienteServiciosTest {
 
     private static final String CLAVE_SERVICIO = "clave-de-prueba";
     private static final int TIMEOUT_LECTURA_NORMAL_SEGUNDOS = 30;
+    private static final String APP_URL = "https://app.mejorvejez.test";
 
     private MockWebServer alertas;
     private MockWebServer reportes;
@@ -50,7 +51,8 @@ class ClienteServiciosTest {
         reportes = new MockWebServer();
         reportes.start();
         cliente = new ClienteServicios(alertas.url("/").toString(), reportes.url("/").toString(), CLAVE_SERVICIO,
-                TIMEOUT_LECTURA_NORMAL_SEGUNDOS, TIMEOUT_LECTURA_NORMAL_SEGUNDOS, JsonMapper.builder().build());
+                TIMEOUT_LECTURA_NORMAL_SEGUNDOS, TIMEOUT_LECTURA_NORMAL_SEGUNDOS, APP_URL,
+                JsonMapper.builder().build());
     }
 
     @AfterEach
@@ -248,7 +250,7 @@ class ClienteServiciosTest {
                 .bodyDelay(2, TimeUnit.SECONDS).build());
 
         ClienteServicios clienteConTimeoutCorto = new ClienteServicios(alertas.url("/").toString(),
-                reportes.url("/").toString(), CLAVE_SERVICIO, 1, TIMEOUT_LECTURA_NORMAL_SEGUNDOS,
+                reportes.url("/").toString(), CLAVE_SERVICIO, 1, TIMEOUT_LECTURA_NORMAL_SEGUNDOS, APP_URL,
                 JsonMapper.builder().build());
 
         assertThatThrownBy(clienteConTimeoutCorto::deteccionAtrasos)
@@ -266,7 +268,7 @@ class ClienteServiciosTest {
                 .bodyDelay(2, TimeUnit.SECONDS).build());
 
         ClienteServicios clienteConTimeoutCorto = new ClienteServicios(alertas.url("/").toString(),
-                reportes.url("/").toString(), CLAVE_SERVICIO, TIMEOUT_LECTURA_NORMAL_SEGUNDOS, 1,
+                reportes.url("/").toString(), CLAVE_SERVICIO, TIMEOUT_LECTURA_NORMAL_SEGUNDOS, 1, APP_URL,
                 JsonMapper.builder().build());
 
         assertThatThrownBy(() -> clienteConTimeoutCorto.reporteSemanal(null))
@@ -274,5 +276,90 @@ class ClienteServiciosTest {
                 .hasMessage("El servicio de reportes no respondió a tiempo; la corrida puede seguir en curso.")
                 .extracting(ex -> ((ExcepcionServicioExterno) ex).getEstado())
                 .isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
+    }
+
+    // ------------------------------------------------------------------
+    // Correos de HU-01 (cuenta nueva / recuperar clave): nunca lanzan
+    // ------------------------------------------------------------------
+
+    @Test
+    void correoCuentaNuevaExitoDevuelveTrueYArmaLaUrlDeIngreso() throws Exception {
+        alertas.enqueue(new MockResponse.Builder().code(200).addHeader("Content-Type", "application/json")
+                .body("{\"enviado\":true}").build());
+
+        boolean enviado = cliente.enviarCorreoCuentaNueva("Ana", "ana@correo.cl", "Clave-Temporal-1");
+
+        assertThat(enviado).isTrue();
+        RecordedRequest solicitud = alertas.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(solicitud).isNotNull();
+        assertThat(solicitud.getMethod()).isEqualTo("POST");
+        assertThat(solicitud.getTarget()).isEqualTo("/api/interno/correos/cuenta-nueva");
+        String cuerpo = solicitud.getBody().utf8();
+        assertThat(cuerpo).contains("\"nombre\":\"Ana\"")
+                .contains("\"email\":\"ana@correo.cl\"")
+                .contains("\"claveTemporal\":\"Clave-Temporal-1\"")
+                .contains("\"urlIngreso\":\"" + APP_URL + "/ingreso\"");
+    }
+
+    @Test
+    void correoCuentaNuevaConAlertasCaidoDevuelveFalseSinLanzar() throws Exception {
+        alertas.close();
+
+        boolean enviado = cliente.enviarCorreoCuentaNueva("Ana", "ana@correo.cl", "Clave-Temporal-1");
+
+        assertThat(enviado).isFalse();
+    }
+
+    @Test
+    void correoCuentaNuevaConFallaNoDejaLaClaveEnElLog() {
+        alertas.close();
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ClienteServicios.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            boolean enviado = cliente.enviarCorreoCuentaNueva("Ana", "ana@correo.cl", "Clave-Secreta-1");
+
+            assertThat(enviado).isFalse();
+            assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .allSatisfy(mensaje -> assertThat(mensaje).doesNotContain("Clave-Secreta-1"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void correoCuentaNuevaConRespuestaNoEnviadaDevuelveFalse() throws Exception {
+        alertas.enqueue(new MockResponse.Builder().code(200).addHeader("Content-Type", "application/json")
+                .body("{\"enviado\":false}").build());
+
+        boolean enviado = cliente.enviarCorreoCuentaNueva("Ana", "ana@correo.cl", "Clave-Temporal-1");
+
+        assertThat(enviado).isFalse();
+    }
+
+    @Test
+    void correoRecuperarClaveExitoDevuelveTrue() throws Exception {
+        alertas.enqueue(new MockResponse.Builder().code(200).addHeader("Content-Type", "application/json")
+                .body("{\"enviado\":true}").build());
+
+        boolean enviado = cliente.enviarCorreoRecuperarClave("Ana", "ana@correo.cl",
+                "https://app.mejorvejez.test/restablecer-clave?codigo=abc");
+
+        assertThat(enviado).isTrue();
+        RecordedRequest solicitud = alertas.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(solicitud).isNotNull();
+        assertThat(solicitud.getTarget()).isEqualTo("/api/interno/correos/recuperar-clave");
+    }
+
+    @Test
+    void correoRecuperarClaveConAlertasCaidoDevuelveFalseSinLanzar() throws Exception {
+        alertas.close();
+
+        boolean enviado = cliente.enviarCorreoRecuperarClave("Ana", "ana@correo.cl",
+                "https://app.mejorvejez.test/restablecer-clave?codigo=abc");
+
+        assertThat(enviado).isFalse();
     }
 }

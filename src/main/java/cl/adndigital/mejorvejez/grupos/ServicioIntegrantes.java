@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -19,8 +20,14 @@ import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
 import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
 import cl.adndigital.mejorvejez.comun.ExcepcionAccesoDenegado;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
+import cl.adndigital.mejorvejez.comun.ExcepcionDemasiadosIntentos;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
+import cl.adndigital.mejorvejez.cuentas.AltaCuenta;
+import cl.adndigital.mejorvejez.cuentas.CuentaCreada;
+import cl.adndigital.mejorvejez.cuentas.LimitadorAltasPorActor;
+import cl.adndigital.mejorvejez.cuentas.OrigenCuenta;
+import cl.adndigital.mejorvejez.cuentas.ServicioAltaCuentas;
 import cl.adndigital.mejorvejez.seguridad.ContextoGrupo;
 import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
 import cl.adndigital.mejorvejez.usuarios.RepositorioUsuario;
@@ -97,13 +104,16 @@ public class ServicioIntegrantes {
     private final ServicioAutorizacion servicioAutorizacion;
     private final ServicioCatalogos servicioCatalogos;
     private final ServicioAuditoria servicioAuditoria;
+    private final ServicioAltaCuentas servicioAltaCuentas;
+    private final LimitadorAltasPorActor limitadorAltas;
     private final Clock reloj;
 
     public ServicioIntegrantes(RepositorioGrupoFamiliar repositorioGrupo,
             RepositorioIntegranteGrupo repositorioIntegrante, RepositorioRolGrupo repositorioRol,
             RepositorioUsuario repositorioUsuario, RepositorioHistorialIntegrante repositorioHistorial,
             ServicioAutorizacion servicioAutorizacion, ServicioCatalogos servicioCatalogos,
-            ServicioAuditoria servicioAuditoria, Clock reloj) {
+            ServicioAuditoria servicioAuditoria, ServicioAltaCuentas servicioAltaCuentas,
+            LimitadorAltasPorActor limitadorAltas, Clock reloj) {
         this.repositorioGrupo = repositorioGrupo;
         this.repositorioIntegrante = repositorioIntegrante;
         this.repositorioRol = repositorioRol;
@@ -112,6 +122,8 @@ public class ServicioIntegrantes {
         this.servicioAutorizacion = servicioAutorizacion;
         this.servicioCatalogos = servicioCatalogos;
         this.servicioAuditoria = servicioAuditoria;
+        this.servicioAltaCuentas = servicioAltaCuentas;
+        this.limitadorAltas = limitadorAltas;
         this.reloj = reloj;
     }
 
@@ -187,6 +199,45 @@ public class ServicioIntegrantes {
                 Map.of("idUsuario", usuario.getIdUsuario(), "idRol", idRol)));
 
         return RespuestaIntegrante.desde(guardado, usuario, rol);
+    }
+
+    /**
+     * Crea una cuenta nueva (Firebase + {@code USUARIO}, origen {@code
+     * COORDINADOR}) y la incorpora de una vez al grupo con el rol indicado
+     * ({@code POST .../integrantes/nuevo}). Exige coordinador y valida el
+     * rol antes de tocar el proveedor de identidad; la incorporación en sí
+     * vuelve a validar como {@link #incorporar(long, String, long)} ya lo
+     * hace. Si esa incorporación falla (p. ej. el correo quedó duplicado
+     * entre la validación y el guardado), {@link ServicioAltaCuentas}
+     * compensa borrando la cuenta recién creada en el proveedor.
+     *
+     * <p>Un actor que no es administrador puede intentar como mucho las
+     * altas que permite {@link LimitadorAltasPorActor} dentro de su
+     * ventana; el límite se revisa después de autorizar y validar el rol y
+     * antes de tocar el proveedor de identidad, así que al superarlo no se
+     * crea nada. El administrador está exento.
+     *
+     * @throws ExcepcionAccesoDenegado     no es coordinador activo del grupo.
+     * @throws ExcepcionReglaNegocio       el rol indicado no existe.
+     * @throws ExcepcionDemasiadosIntentos el actor no administrador superó
+     *                                     su límite de altas.
+     * @throws ExcepcionConflicto          ya existe una cuenta con ese correo.
+     */
+    public RespuestaIntegranteCreado crearIntegrante(long idGrupo, String nombre, String email, long idRol) {
+        ContextoGrupo contexto = servicioAutorizacion.exigirCoordinador(idGrupo);
+        buscarRol(idRol);
+        if (!contexto.esAdministrador() && !limitadorAltas.permitirAlta(contexto.usuario().getIdUsuario())) {
+            throw new ExcepcionDemasiadosIntentos();
+        }
+
+        AtomicReference<RespuestaIntegrante> incorporado = new AtomicReference<>();
+        AltaCuenta alta = new AltaCuenta(nombre, email, null, OrigenCuenta.COORDINADOR,
+                contexto.usuario().getIdUsuario(), null, true,
+                usuarioNuevo -> incorporado.set(incorporar(idGrupo, usuarioNuevo.getEmail(), idRol)));
+
+        CuentaCreada cuentaCreada = servicioAltaCuentas.crear(alta);
+        return new RespuestaIntegranteCreado(incorporado.get(), cuentaCreada.claveTemporal(),
+                cuentaCreada.correoEnviado());
     }
 
     /**

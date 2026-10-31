@@ -66,6 +66,22 @@ class ManejadorErroresTest {
     }
 
     @Test
+    void cuentasNoConfiguradasDevuelve503() throws Exception {
+        mockMvc.perform(get("/api/prueba-errores/cuentas-no-configuradas").with(jwt()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.title").value("Servicio no disponible"))
+                .andExpect(jsonPath("$.detail").value("La creación de cuentas no está configurada"));
+    }
+
+    @Test
+    void demasiadosIntentosDevuelve429() throws Exception {
+        mockMvc.perform(get("/api/prueba-errores/demasiados-intentos").with(jwt()))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.title").value("Demasiados intentos"))
+                .andExpect(jsonPath("$.detail").value("Demasiados intentos. Prueba más tarde."));
+    }
+
+    @Test
     void validacionDevuelve400ConCampos() throws Exception {
         mockMvc.perform(post("/api/prueba-errores/validacion")
                         .with(jwt())

@@ -77,6 +77,38 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
+		<!-- SDK de administración de Firebase: crea las cuentas y genera el
+		     enlace de restablecimiento (cuentas/ConfiguracionFirebase). Solo
+		     se usa Firebase Auth; se excluyen Firestore y Storage (no se
+		     usan) para no arrastrar su árbol de gRPC/Protobuf/Netty/Jackson 2
+		     (Spring Boot 4 ya maneja su propio Jackson 3). -->
+		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+			<version>9.11.0</version>
+			<exclusions>
+				<exclusion>
+					<groupId>com.google.cloud</groupId>
+					<artifactId>google-cloud-firestore</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.google.cloud</groupId>
+					<artifactId>google-cloud-storage</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!-- FirebaseOptions (com.google.firebase) exige en el classpath la
+		     clase JacksonFactory de este artefacto al construirse
+		     (NoClassDefFoundError si falta), aunque esta app no la use para
+		     nada: normalmente la trae google-cloud-storage, que se excluyó
+		     arriba. Solo depende de jackson-core (no jackson-databind), así
+		     que no reintroduce el árbol pesado que se evitó al excluir
+		     Storage/Firestore. -->
+		<dependency>
+			<groupId>com.google.http-client</groupId>
+			<artifactId>google-http-client-jackson2</artifactId>
+			<version>2.2.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa-test</artifactId>

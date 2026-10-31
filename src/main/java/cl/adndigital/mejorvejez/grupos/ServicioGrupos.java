@@ -71,20 +71,30 @@ public class ServicioGrupos {
      */
     @Transactional
     public RespuestaGrupo crear(String nombreGrupo) {
-        Usuario usuario = servicioUsuarioActual.obtener();
+        return crearConCreador(nombreGrupo, servicioUsuarioActual.obtener());
+    }
+
+    /**
+     * Misma creación que {@link #crear(String)}, pero con {@code creador}
+     * explícito en vez del usuario autenticado: lo reutiliza el registro
+     * propio (HU-01), que crea el grupo en la misma transacción del alta de
+     * la cuenta, antes de que exista un usuario autenticado en la petición.
+     */
+    @Transactional
+    public RespuestaGrupo crearConCreador(String nombreGrupo, Usuario creador) {
         OffsetDateTime ahora = OffsetDateTime.now(reloj);
 
         long idEstadoActivoGrupo = servicioCatalogos.idEstado(TABLA_ESTADO_GRUPO, CAMPO_ESTADO, CODIGO_ACTIVO);
         GrupoFamiliar grupo = repositorioGrupo.save(
-                new GrupoFamiliar(nombreGrupo.trim(), true, usuario.getIdUsuario(), idEstadoActivoGrupo, ahora));
+                new GrupoFamiliar(nombreGrupo.trim(), true, creador.getIdUsuario(), idEstadoActivoGrupo, ahora));
 
         long idRolCoordinador = idRol(RolGrupo.COORDINADOR);
         long idEstadoActivoIntegrante = servicioCatalogos.idEstado(TABLA_ESTADO_INTEGRANTE, CAMPO_ESTADO, CODIGO_ACTIVO);
-        repositorioIntegrante.save(new IntegranteGrupo(grupo.getIdGrupo(), usuario.getIdUsuario(), idRolCoordinador,
+        repositorioIntegrante.save(new IntegranteGrupo(grupo.getIdGrupo(), creador.getIdUsuario(), idRolCoordinador,
                 idEstadoActivoIntegrante, ahora));
 
         servicioAuditoria.registrar(new EventoARegistrar(MODULO, TIPO_ENTIDAD, String.valueOf(grupo.getIdGrupo()),
-                grupo.getIdGrupo(), usuario.getIdUsuario(), ACCION_CREAR_GRUPO, ResultadoAuditoria.EXITO,
+                grupo.getIdGrupo(), creador.getIdUsuario(), ACCION_CREAR_GRUPO, ResultadoAuditoria.EXITO,
                 Map.of("nombreGrupo", grupo.getNombreGrupo())));
 
         return RespuestaGrupo.desde(grupo, RolGrupo.COORDINADOR);
