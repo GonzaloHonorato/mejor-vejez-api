@@ -20,8 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
  * Perfiles de adultos mayores de un grupo (HU-03). La autorización la exige
  * {@link ServicioAdultosMayores} en cada operación.
  *
- * <p>Contrato de respuesta: {@code POST .../adultos} devuelve 201 con
- * {@link RespuestaAdultoMayor} (y {@code Location}); {@code PUT
+ * <p>Contrato de respuesta: {@code POST .../adultos} recibe {@link
+ * SolicitudCrearAdultoMayor} (perfil + contacto principal) y devuelve 201
+ * con {@link RespuestaAdultoMayor}, ya con su contacto principal (y {@code
+ * Location}); {@code PUT
  * .../adultos/{idAdulto}}, {@code POST .../desactivar} y {@code POST
  * .../reactivar} devuelven 200 con {@link RespuestaAdultoMayor} actualizado;
  * {@code DELETE} devuelve 204.
@@ -49,7 +51,7 @@ public class ControladorAdultosMayores {
 
     @PostMapping
     public ResponseEntity<RespuestaAdultoMayor> crear(@PathVariable long idGrupo,
-            @Valid @RequestBody SolicitudGuardarAdultoMayor solicitud) {
+            @Valid @RequestBody SolicitudCrearAdultoMayor solicitud) {
         RespuestaAdultoMayor creado = servicio.crear(idGrupo, solicitud);
         return ResponseEntity.created(URI.create("/api/grupos/" + idGrupo + "/adultos/" + creado.idAdultoMayor()))
                 .body(creado);

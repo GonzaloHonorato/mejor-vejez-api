@@ -22,6 +22,7 @@ import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
+import cl.adndigital.mejorvejez.comun.TelefonoChileno;
 import cl.adndigital.mejorvejez.seguridad.ServicioUsuarioActual;
 import cl.adndigital.mejorvejez.usuarios.RepositorioUsuario;
 import cl.adndigital.mejorvejez.usuarios.Usuario;
@@ -43,7 +44,8 @@ import cl.adndigital.mejorvejez.usuarios.Usuario;
  * lo que la validación rechaza (último chequeo de la regla 17). {@code
  * WHATSAPP} sigue gobernado por {@code
  * mejorvejez.notificaciones.whatsapp-habilitado} (spike TSA-46, fijo en
- * {@code false} en este MVP).
+ * {@code false} en este MVP). Su número debe ser un teléfono chileno
+ * ({@link TelefonoChileno}) y se guarda normalizado como {@code +56XXXXXXXXX}.
  */
 @Service
 public class ServicioCanales {
@@ -51,7 +53,6 @@ public class ServicioCanales {
     private static final String TIPO_ENTIDAD = "USUARIO";
 
     private static final Pattern PATRON_CORREO = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
-    private static final Pattern PATRON_WHATSAPP = Pattern.compile("^\\+[1-9]\\d{7,14}$");
     private static final int MAXIMO_LARGO_CORREO = 254;
     private static final String MENSAJE_LISTA_INVALIDA = "La lista de canales no es válida.";
 
@@ -104,18 +105,19 @@ public class ServicioCanales {
         if (canales == null || canales.stream().anyMatch(Objects::isNull)) {
             throw new ExcepcionReglaNegocio(MENSAJE_LISTA_INVALIDA);
         }
-        validar(canales);
-
         repositorioUsuario.bloquearPorId(usuario.getIdUsuario()).orElseThrow();
 
         List<CanalNotificacionUsuario> filasActuales = repositorio.findByIdUsuario(usuario.getIdUsuario());
         Map<String, CanalNotificacionUsuario> filasPorCanal = filasActuales.stream()
                 .collect(Collectors.toMap(CanalNotificacionUsuario::getCanal, Function.identity()));
+        CanalNotificacionUsuario filaWhatsappActual = filasPorCanal.get(CodigosNotificaciones.CANAL_WHATSAPP);
+        String whatsappActual = filaWhatsappActual == null ? null : filaWhatsappActual.getDestino();
+        validar(canales, whatsappActual);
         OffsetDateTime ahora = OffsetDateTime.now(reloj);
 
         Set<String> canalesEnviados = new HashSet<>();
         for (SolicitudCanal canal : canales) {
-            String destino = canal.destino() == null ? null : canal.destino().strip();
+            String destino = destinoNormalizado(canal, whatsappActual);
             canalesEnviados.add(canal.canal());
             CanalNotificacionUsuario fila = filasPorCanal.get(canal.canal());
             if (fila == null) {
@@ -216,7 +218,13 @@ public class ServicioCanales {
         return new RespuestaCanales(canales, whatsappDisponible);
     }
 
-    private void validar(List<SolicitudCanal> canales) {
+    /**
+     * @param whatsappActual número de WhatsApp ya guardado (o {@code null}):
+     *                       si llega el mismo ({@link TelefonoChileno#mismoTelefono}),
+     *                       no se valida, para que un número antiguo que no
+     *                       cumple la regla no impida guardar los demás canales.
+     */
+    private void validar(List<SolicitudCanal> canales, String whatsappActual) {
         Set<String> vistos = new HashSet<>();
         for (SolicitudCanal canal : canales) {
             String codigo = canal.canal();
@@ -231,15 +239,33 @@ public class ServicioCanales {
                 if (!esCorreoValido(destino)) {
                     throw new ExcepcionReglaNegocio("El correo de notificación no es válido.");
                 }
-            } else if (!PATRON_WHATSAPP.matcher(destino).matches()) {
-                throw new ExcepcionReglaNegocio(
-                        "El número de WhatsApp debe tener formato internacional, por ejemplo +56912345678.");
+            } else if (!TelefonoChileno.mismoTelefono(destino, whatsappActual)
+                    && !TelefonoChileno.esValido(destino)) {
+                throw new ExcepcionReglaNegocio(TelefonoChileno.MENSAJE);
             }
         }
         if (!resultaConCanalOperativo(canales)) {
             throw new ExcepcionReglaNegocio(
                     "Debes mantener al menos un canal habilitado que el sistema pueda usar (hoy, el correo).");
         }
+    }
+
+    /**
+     * El destino a guardar: el correo recortado; el número de WhatsApp ya
+     * guardado tal cual si llega el mismo; si no, el nuevo normalizado (ya
+     * validado).
+     */
+    private String destinoNormalizado(SolicitudCanal canal, String whatsappActual) {
+        if (canal.destino() == null) {
+            return null;
+        }
+        if (CodigosNotificaciones.CANAL_WHATSAPP.equals(canal.canal())
+                && TelefonoChileno.mismoTelefono(canal.destino(), whatsappActual)) {
+            return whatsappActual;
+        }
+        return CodigosNotificaciones.CANAL_WHATSAPP.equals(canal.canal())
+                ? TelefonoChileno.normalizar(canal.destino())
+                : canal.destino().strip();
     }
 
     /** Si, tras aplicar {@code canales}, el usuario queda con al menos un canal operativo (regla 8). */

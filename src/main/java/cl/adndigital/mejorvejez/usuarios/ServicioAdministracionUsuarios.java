@@ -17,8 +17,10 @@ import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
 import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
 import cl.adndigital.mejorvejez.comun.ExcepcionAccesoDenegado;
+import cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
+import cl.adndigital.mejorvejez.comun.TelefonoChileno;
 import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
 
 /**
@@ -97,6 +99,8 @@ public class ServicioAdministracionUsuarios {
      * @throws ExcepcionAccesoDenegado quien llama no es administrador.
      * @throws ExcepcionNoEncontrado   el usuario no existe.
      * @throws ExcepcionReglaNegocio   quita el rol al último administrador activo.
+     * @throws ExcepcionCampoInvalido  el teléfono cambió y no es chileno (si es el mismo ya
+     *                                 guardado, no se valida: {@link TelefonoChileno#aGuardar}).
      */
     @Transactional
     public Usuario actualizar(long idUsuario, String nombre, String telefono, boolean esAdministrador) {
@@ -110,7 +114,8 @@ public class ServicioAdministracionUsuarios {
         boolean seguiraSiendoAdministradorActivo = esAdministrador && usuario.getIdEstado() == idEstadoActivo();
         exigirQuedeAlMenosUnAdministradorActivo(usuario, seguiraSiendoAdministradorActivo);
 
-        usuario.actualizarDesdeAdministracion(nombre, telefono, esAdministrador, OffsetDateTime.now(reloj));
+        String telefonoAGuardar = TelefonoChileno.aGuardar(telefono, telefonoAnterior);
+        usuario.actualizarDesdeAdministracion(nombre, telefonoAGuardar, esAdministrador, OffsetDateTime.now(reloj));
         Usuario guardado = repositorio.save(usuario);
 
         List<String> camposCambiados = new ArrayList<>();

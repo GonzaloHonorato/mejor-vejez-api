@@ -17,7 +17,9 @@ import cl.adndigital.mejorvejez.auditoria.DetallesAuditoria;
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
+import cl.adndigital.mejorvejez.catalogos.RespuestaOpcion;
 import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
+import cl.adndigital.mejorvejez.catalogos.TipoCatalogo;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
 import cl.adndigital.mejorvejez.comun.ExcepcionReglaNegocio;
@@ -45,6 +47,11 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  * que esté ACTIVO → leer sus contactos → reglas → guardar. Autorizar antes
  * de bloquear evita revelar en qué grupo está un adulto ajeno.
  *
+ * <p><b>Parentesco.</b> Crear y actualizar exigen una opción del catálogo
+ * {@code PARENTESCO}; se guarda su ID y, en {@code PARENTESCO}, su
+ * descripción. Los contactos anteriores al catálogo conservan su texto
+ * hasta que se editan.
+ *
  * <p><b>Trazabilidad de administrador.</b> Ver {@link DetallesAuditoria},
  * compartido con {@link ServicioAdultosMayores}.
  */
@@ -66,6 +73,8 @@ public class ServicioContactos {
     private static final String ACCION_ELIMINAR = "ELIMINAR_CONTACTO";
 
     private static final String MENSAJE_CONTACTO_NO_EXISTE = "El contacto no existe";
+    private static final String MENSAJE_PARENTESCO_INVALIDO = "El parentesco indicado no es válido.";
+    private static final String MENSAJE_PARENTESCO_OBLIGATORIO = "El parentesco es obligatorio.";
     private static final String MENSAJE_CONTACTO_INACTIVO_NO_EDITABLE =
             "El contacto está inactivo; reactívalo para modificarlo";
     private static final String MENSAJE_SOLO_ACTIVO_PRINCIPAL = "Solo un contacto activo puede ser principal";
@@ -128,13 +137,14 @@ public class ServicioContactos {
      *
      * @throws ExcepcionAccesoDenegado no es coordinador activo del grupo.
      * @throws ExcepcionNoEncontrado   el adulto no existe o no pertenece al grupo.
-     * @throws ExcepcionReglaNegocio   el adulto está inactivo.
+     * @throws ExcepcionReglaNegocio   el adulto está inactivo, o el parentesco no es del catálogo.
      */
     @Transactional
     public RespuestaContacto crear(long idGrupo, long idAdulto, SolicitudCrearContacto solicitud) {
         ContextoGrupo contexto = servicioAutorizacion.exigirCoordinador(idGrupo);
         AdultoMayor adulto = bloquearAdultoDelGrupo(idGrupo, idAdulto);
         exigirAdultoActivo(adulto);
+        RespuestaOpcion parentesco = parentescoValido(solicitud.idParentesco());
 
         List<ContactoEmergencia> contactos = repositorioContacto.findByIdAdultoMayor(idAdulto);
         ContactoEmergencia principalActual = principalActivoEntre(contactos).orElse(null);
@@ -147,8 +157,8 @@ public class ServicioContactos {
         }
 
         ContactoEmergencia nuevo = new ContactoEmergencia(idAdulto, solicitud.nombreContacto(),
-                solicitud.parentesco(), solicitud.telefono(), seraPrincipal, idEstadoActivoContacto(),
-                contexto.usuario().getIdUsuario(), ahora);
+                parentesco.idOpcion(), parentesco.descripcion(), solicitud.telefono(), seraPrincipal,
+                idEstadoActivoContacto(), contexto.usuario().getIdUsuario(), ahora);
         ContactoEmergencia guardado = repositorioContacto.save(nuevo);
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_CREAR, null);
@@ -157,12 +167,41 @@ public class ServicioContactos {
     }
 
     /**
+     * Contacto principal del alta de un adulto mayor ({@code POST
+     * .../adultos}), dentro de la transacción de {@link
+     * ServicioAdultosMayores#crear}: el adulto recién creado no tiene
+     * contactos, así que el nuevo queda principal sin traspaso. Audita {@code
+     * CREAR_CONTACTO} igual que {@link #crear}. El llamador ya autorizó y
+     * validó el parentesco con {@link #parentescoValido}.
+     */
+    RespuestaContacto crearPrincipalDelAlta(ContextoGrupo contexto, long idGrupo, long idAdulto,
+            SolicitudContactoPrincipal datos, RespuestaOpcion parentesco) {
+        ContactoEmergencia nuevo = new ContactoEmergencia(idAdulto, datos.nombre(), parentesco.idOpcion(),
+                parentesco.descripcion(), datos.telefono(), true, idEstadoActivoContacto(),
+                contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
+        ContactoEmergencia guardado = repositorioContacto.save(nuevo);
+
+        registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_CREAR, null);
+
+        return RespuestaContacto.desde(guardado);
+    }
+
+    /** @throws ExcepcionReglaNegocio {@code idParentesco} falta o no es una opción del catálogo {@code PARENTESCO}. */
+    RespuestaOpcion parentescoValido(Long idParentesco) {
+        if (idParentesco == null) {
+            throw new ExcepcionReglaNegocio(MENSAJE_PARENTESCO_OBLIGATORIO);
+        }
+        return servicioCatalogos.opcionValida(idParentesco, TipoCatalogo.PARENTESCO, MENSAJE_PARENTESCO_INVALIDO);
+    }
+
+    /**
      * Actualiza nombre, parentesco y teléfono. Si, tras normalizar, ningún
      * campo cambia, no guarda ni audita.
      *
      * @throws ExcepcionAccesoDenegado no es coordinador activo del grupo.
      * @throws ExcepcionNoEncontrado   el adulto o el contacto no existen, o no pertenecen a la URL.
-     * @throws ExcepcionReglaNegocio   el adulto está inactivo, o el contacto está inactivo.
+     * @throws ExcepcionReglaNegocio   el adulto está inactivo, el contacto está inactivo, o el
+     *                                 parentesco no es del catálogo.
      */
     @Transactional
     public RespuestaContacto actualizar(long idGrupo, long idAdulto, long idContacto,
@@ -173,14 +212,15 @@ public class ServicioContactos {
 
         ContactoEmergencia contacto = buscarContactoDelAdulto(idAdulto, idContacto);
         exigirContactoActivo(contacto);
+        RespuestaOpcion parentesco = parentescoValido(solicitud.idParentesco());
 
         List<String> camposModificados = detectarCambios(contacto, solicitud);
         if (camposModificados.isEmpty()) {
             return RespuestaContacto.desde(contacto);
         }
 
-        contacto.actualizar(solicitud.nombreContacto(), solicitud.parentesco(), solicitud.telefono(),
-                OffsetDateTime.now(reloj));
+        contacto.actualizar(solicitud.nombreContacto(), parentesco.idOpcion(), parentesco.descripcion(),
+                solicitud.telefono(), OffsetDateTime.now(reloj));
         ContactoEmergencia guardado = repositorioContacto.save(contacto);
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_ACTUALIZAR,
@@ -437,7 +477,7 @@ public class ServicioContactos {
         if (!Objects.equals(contacto.getNombreContacto(), solicitud.nombreContacto())) {
             cambios.add("nombreContacto");
         }
-        if (!Objects.equals(contacto.getParentesco(), solicitud.parentesco())) {
+        if (!Objects.equals(contacto.getIdParentesco(), solicitud.idParentesco())) {
             cambios.add("parentesco");
         }
         if (!Objects.equals(contacto.getTelefono(), solicitud.telefono())) {

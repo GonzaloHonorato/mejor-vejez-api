@@ -32,7 +32,8 @@ class MigracionesFlywayTest {
     void cargaLosCatalogos() {
         // 48 de V2 + 6 de V5 (ENVIO_REPORTE.ESTADO y ENVIO_REPORTE_DESTINATARIO.ESTADO).
         assertThat(contarFilas("CATALOGO_ESTADOS")).isEqualTo(54);
-        assertThat(contarFilas("CATALOGO_NEGOCIO")).isEqualTo(21);
+        // 21 de V2 + 15 de PARENTESCO en V6 (formas femeninas separadas).
+        assertThat(contarFilas("CATALOGO_NEGOCIO")).isEqualTo(36);
         assertThat(contarFilas("ROL_GRUPO")).isEqualTo(2);
     }
 
@@ -40,6 +41,34 @@ class MigracionesFlywayTest {
     void catalogoTieneEstadosDeEnvio() {
         assertThat(estadosDe("ENVIO_REPORTE")).containsExactly("PENDIENTE", "ENVIADO", "FALLIDO");
         assertThat(estadosDe("ENVIO_REPORTE_DESTINATARIO")).containsExactly("PENDIENTE", "ENVIADO", "FALLIDO");
+    }
+
+    @Test
+    void catalogoTieneLosParentescosEnOrden() {
+        List<String> parentescos = jdbcTemplate.queryForList(
+                "SELECT CODIGO || ':' || DESCRIPCION FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'PARENTESCO' "
+                        + "AND ACTIVO = 'S' ORDER BY ORDEN",
+                String.class);
+
+        assertThat(parentescos).containsExactly("PADRE:Padre", "MADRE:Madre", "HIJO:Hijo", "HIJA:Hija",
+                "NIETO:Nieto", "NIETA:Nieta", "HERMANO:Hermano", "HERMANA:Hermana", "TIO:Tío", "TIA:Tía",
+                "SOBRINO:Sobrino", "SOBRINA:Sobrina", "CONYUGE:Cónyuge", "YERNO:Yerno", "NUERA:Nuera");
+    }
+
+    @Test
+    void contactoTieneIdParentescoNuloConFkAlCatalogo() {
+        String nulable = jdbcTemplate.queryForObject(
+                "SELECT NULLABLE FROM USER_TAB_COLUMNS WHERE TABLE_NAME = 'CONTACTO_EMERGENCIA' "
+                        + "AND COLUMN_NAME = 'ID_PARENTESCO'",
+                String.class);
+        String tablaReferida = jdbcTemplate.queryForObject(
+                "SELECT r.TABLE_NAME FROM USER_CONSTRAINTS c "
+                        + "JOIN USER_CONSTRAINTS r ON r.CONSTRAINT_NAME = c.R_CONSTRAINT_NAME "
+                        + "WHERE c.CONSTRAINT_NAME = 'FK_CONTACTO_PARENTESCO'",
+                String.class);
+
+        assertThat(nulable).isEqualTo("Y");
+        assertThat(tablaReferida).isEqualTo("CATALOGO_NEGOCIO");
     }
 
     @Test

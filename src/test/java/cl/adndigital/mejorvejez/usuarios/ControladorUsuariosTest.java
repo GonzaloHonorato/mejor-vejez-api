@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -28,6 +29,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
+import cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
 import cl.adndigital.mejorvejez.comun.ExcepcionCuentasNoConfiguradas;
 import cl.adndigital.mejorvejez.comun.ManejadorErrores;
@@ -144,6 +146,44 @@ class ControladorUsuariosTest {
                         .content("{\"email\":\"ana@correo.cl\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errores[0].campo").value("nombre"));
+    }
+
+    @Test
+    void crearCuentaConTelefonoNoChilenoDevuelve400() throws Exception {
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\",\"telefono\":\"+1 555 123 4567\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("telefono"))
+                .andExpect(jsonPath("$.errores[0].mensaje").value("Ingresa un teléfono chileno: +56 y 9 dígitos."));
+    }
+
+    @Test
+    void crearCuentaNormalizaElTelefono() throws Exception {
+        Usuario usuario = new Usuario("uid-nuevo", "ana@correo.cl", "Ana", "+56912345678", 1L, OffsetDateTime.now());
+        ReflectionTestUtils.setField(usuario, "idUsuario", 7L);
+        when(servicioAltaCuentas.crearCuenta("Ana", "ana@correo.cl", "+56912345678"))
+                .thenReturn(new CuentaCreada(usuario, "Clave-Temporal-1", true));
+
+        mockMvc.perform(post("/api/usuarios").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"email\":\"ana@correo.cl\",\"telefono\":\"9 1234 5678\"}"))
+                .andExpect(status().isCreated());
+
+        verify(servicioAltaCuentas).crearCuenta("Ana", "ana@correo.cl", "+56912345678");
+    }
+
+    @Test
+    void editarUsuarioConTelefonoInvalidoDevuelve400() throws Exception {
+        when(servicio.actualizar(7L, "Ana", "12-34", false))
+                .thenThrow(new ExcepcionCampoInvalido("telefono", "Ingresa un teléfono chileno: +56 y 9 dígitos."));
+
+        mockMvc.perform(patch("/api/usuarios/7").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\":\"Ana\",\"telefono\":\"12-34\",\"esAdministrador\":false}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("telefono"))
+                .andExpect(jsonPath("$.errores[0].mensaje").value("Ingresa un teléfono chileno: +56 y 9 dígitos."));
     }
 
     @Test

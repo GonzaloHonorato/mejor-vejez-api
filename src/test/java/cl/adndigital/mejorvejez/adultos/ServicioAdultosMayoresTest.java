@@ -46,6 +46,8 @@ class ServicioAdultosMayoresTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private static final LocalDate NACIMIENTO = LocalDate.of(1945, 3, 10);
+
     private FixturaGrupos fixturaGrupos;
     private FixturaAdultos fixturaAdultos;
 
@@ -68,8 +70,8 @@ class ServicioAdultosMayoresTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         autenticar(uid);
 
-        SolicitudGuardarAdultoMayor solicitud = new SolicitudGuardarAdultoMayor("COD-1", "Juana Pérez",
-                LocalDate.of(1940, 1, 1), "Notas de emergencia", "Observaciones generales");
+        SolicitudCrearAdultoMayor solicitud = new SolicitudCrearAdultoMayor("COD-1", "Juana Pérez",
+                LocalDate.of(1940, 1, 1), "Notas de emergencia", "Observaciones generales", contactoPrincipal());
 
         RespuestaAdultoMayor creado = servicio.crear(idGrupo, solicitud);
 
@@ -77,7 +79,7 @@ class ServicioAdultosMayoresTest {
         assertThat(creado.nombreCompleto()).isEqualTo("Juana Pérez");
         assertThat(creado.codigoInterno()).isEqualTo("COD-1");
         assertThat(creado.idEstado()).isEqualTo(idEstado("ADULTO_MAYOR", "ACTIVO"));
-        assertThat(creado.contactoPrincipal()).isNull();
+        assertThat(creado.contactoPrincipal()).isNotNull();
 
         List<Map<String, Object>> eventos = jdbcTemplate.queryForList(
                 "SELECT ID_USUARIO_ACTOR FROM EVENTO_AUDITORIA WHERE TIPO_ENTIDAD = 'ADULTO_MAYOR' "
@@ -88,6 +90,107 @@ class ServicioAdultosMayoresTest {
     }
 
     @Test
+    void altaCreaElContactoPrincipalYAuditaAmbos() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uid);
+        long idNieto = fixturaAdultos.idParentesco("NIETO");
+
+        RespuestaAdultoMayor creado = servicio.crear(idGrupo, new SolicitudCrearAdultoMayor(null, "Rosa Díaz",
+                NACIMIENTO, null, null, new SolicitudContactoPrincipal(" Pedro Díaz ", idNieto, "9 8765-4321")));
+
+        RespuestaContacto principal = creado.contactoPrincipal();
+        assertThat(principal.nombreContacto()).isEqualTo("Pedro Díaz");
+        assertThat(principal.idParentesco()).isEqualTo(idNieto);
+        assertThat(principal.parentesco()).isEqualTo("Nieto");
+        assertThat(principal.telefono()).isEqualTo("+56987654321");
+        assertThat(principal.esPrincipal()).isTrue();
+        assertThat(creado.fechaNacimiento()).isEqualTo(NACIMIENTO);
+
+        Map<String, Object> fila = jdbcTemplate.queryForMap(
+                "SELECT ES_PRINCIPAL, ID_ESTADO, ID_PARENTESCO, TELEFONO FROM CONTACTO_EMERGENCIA "
+                        + "WHERE ID_ADULTO_MAYOR = ?",
+                creado.idAdultoMayor());
+        assertThat(fila.get("ES_PRINCIPAL")).isEqualTo("S");
+        assertThat(((Number) fila.get("ID_ESTADO")).longValue()).isEqualTo(idEstado("CONTACTO_EMERGENCIA", "ACTIVO"));
+        assertThat(((Number) fila.get("ID_PARENTESCO")).longValue()).isEqualTo(idNieto);
+        assertThat(fila.get("TELEFONO")).isEqualTo("+56987654321");
+
+        Long eventosContacto = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM EVENTO_AUDITORIA WHERE TIPO_ENTIDAD = 'CONTACTO_EMERGENCIA' "
+                        + "AND ID_ENTIDAD = ? AND CODIGO_ACCION = 'CREAR_CONTACTO' AND ID_GRUPO = ?",
+                Long.class, String.valueOf(principal.idContacto()), idGrupo);
+        assertThat(eventosContacto).isEqualTo(1);
+
+        assertThat(servicio.obtener(idGrupo, creado.idAdultoMayor()).contactoPrincipal().idContacto())
+                .isEqualTo(principal.idContacto());
+    }
+
+    @Test
+    void altaSinFechaDeNacimientoDevuelve422SinCrear() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uid);
+
+        assertThatThrownBy(() -> servicio.crear(idGrupo, alta(null, "Sin fecha", null)))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("La fecha de nacimiento es obligatoria.");
+        assertThat(adultosDelGrupo(idGrupo)).isZero();
+    }
+
+    @Test
+    void altaSinContactoPrincipalDevuelve422SinCrear() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uid);
+
+        assertThatThrownBy(() -> servicio.crear(idGrupo,
+                new SolicitudCrearAdultoMayor(null, "Sin contacto", NACIMIENTO, null, null, null)))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El contacto principal es obligatorio.");
+        assertThat(adultosDelGrupo(idGrupo)).isZero();
+    }
+
+    @Test
+    void altaConParentescoInvalidoDevuelve422SinCrearElAdulto() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        autenticar(uid);
+        long idUnidad = jdbcTemplate.queryForObject(
+                "SELECT ID_OPCION FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'UNIDAD_DOSIS' AND CODIGO = 'ML'",
+                Long.class);
+
+        assertThatThrownBy(() -> servicio.crear(idGrupo, new SolicitudCrearAdultoMayor(null, "Parentesco malo",
+                NACIMIENTO, null, null, new SolicitudContactoPrincipal("Pedro", idUnidad, "+56987654321"))))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El parentesco indicado no es válido.");
+        assertThat(adultosDelGrupo(idGrupo)).isZero();
+    }
+
+    @Test
+    void actualizarSinFechaDeNacimientoDevuelve422() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        autenticar(uid);
+
+        assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto,
+                new SolicitudGuardarAdultoMayor(null, "Adulto fixtura", null, null, null)))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("La fecha de nacimiento es obligatoria.");
+    }
+
+    @Test
     void codigoEnBlancoSeGuardaNuloYNoChoca() {
         String uid = FixturaGrupos.uidUnico();
         long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
@@ -95,10 +198,8 @@ class ServicioAdultosMayoresTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         autenticar(uid);
 
-        RespuestaAdultoMayor primero = servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor("  ", "Primer adulto", null, null, null));
-        RespuestaAdultoMayor segundo = servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor("  ", "Segundo adulto", null, null, null));
+        RespuestaAdultoMayor primero = servicio.crear(idGrupo, alta("  ", "Primer adulto", NACIMIENTO));
+        RespuestaAdultoMayor segundo = servicio.crear(idGrupo, alta("  ", "Segundo adulto", NACIMIENTO));
 
         assertThat(primero.codigoInterno()).isNull();
         assertThat(segundo.codigoInterno()).isNull();
@@ -112,10 +213,9 @@ class ServicioAdultosMayoresTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         autenticar(uid);
 
-        servicio.crear(idGrupo, new SolicitudGuardarAdultoMayor("COD-DUP", "Primer adulto", null, null, null));
+        servicio.crear(idGrupo, alta("COD-DUP", "Primer adulto", NACIMIENTO));
 
-        assertThatThrownBy(() -> servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor("COD-DUP", "Segundo adulto", null, null, null)))
+        assertThatThrownBy(() -> servicio.crear(idGrupo, alta("COD-DUP", "Segundo adulto", NACIMIENTO)))
                 .isInstanceOf(ExcepcionConflicto.class)
                 .hasMessage("Ya existe un adulto mayor con ese código en el grupo");
     }
@@ -131,7 +231,7 @@ class ServicioAdultosMayoresTest {
         LocalDate fechaFutura = LocalDate.now().plusYears(1);
 
         assertThatThrownBy(() -> servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor(null, "Adulto futuro", fechaFutura, null, null)))
+                alta(null, "Adulto futuro", fechaFutura)))
                 .isInstanceOf(ExcepcionReglaNegocio.class)
                 .hasMessage("La fecha de nacimiento no puede ser futura");
     }
@@ -144,9 +244,10 @@ class ServicioAdultosMayoresTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         autenticar(uid);
 
-        SolicitudGuardarAdultoMayor datos = new SolicitudGuardarAdultoMayor("COD-X", "Nombre igual",
-                LocalDate.of(1950, 5, 5), "Notas", "Observaciones");
-        RespuestaAdultoMayor creado = servicio.crear(idGrupo, datos);
+        SolicitudCrearAdultoMayor alta = new SolicitudCrearAdultoMayor("COD-X", "Nombre igual",
+                LocalDate.of(1950, 5, 5), "Notas", "Observaciones", contactoPrincipal());
+        SolicitudGuardarAdultoMayor datos = alta.perfil();
+        RespuestaAdultoMayor creado = servicio.crear(idGrupo, alta);
 
         RespuestaAdultoMayor actualizado = servicio.actualizar(idGrupo, creado.idAdultoMayor(), datos);
 
@@ -167,11 +268,10 @@ class ServicioAdultosMayoresTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         autenticar(uid);
 
-        RespuestaAdultoMayor creado = servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor("COD-Y", "Nombre original", null, null, null));
+        RespuestaAdultoMayor creado = servicio.crear(idGrupo, alta("COD-Y", "Nombre original", NACIMIENTO));
 
         RespuestaAdultoMayor actualizado = servicio.actualizar(idGrupo, creado.idAdultoMayor(),
-                new SolicitudGuardarAdultoMayor("COD-Y", "Nombre nuevo", null, null, null));
+                new SolicitudGuardarAdultoMayor("COD-Y", "Nombre nuevo", NACIMIENTO, null, null));
 
         assertThat(actualizado.nombreCompleto()).isEqualTo("Nombre nuevo");
         assertThat(actualizado.fechaActualizacion()).isNotNull();
@@ -241,7 +341,7 @@ class ServicioAdultosMayoresTest {
         autenticar(uid);
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto,
-                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", null, null, null)))
+                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", NACIMIENTO, null, null)))
                 .isInstanceOf(ExcepcionReglaNegocio.class)
                 .hasMessage("El adulto mayor está inactivo; reactívalo para modificarlo");
     }
@@ -279,12 +379,11 @@ class ServicioAdultosMayoresTest {
         RespuestaAdultoMayor obtenido = servicio.obtener(idGrupo, idAdulto);
         assertThat(obtenido.idAdultoMayor()).isEqualTo(idAdulto);
 
-        assertThatThrownBy(() -> servicio.crear(idGrupo,
-                new SolicitudGuardarAdultoMayor(null, "Nuevo adulto", null, null, null)))
+        assertThatThrownBy(() -> servicio.crear(idGrupo, alta(null, "Nuevo adulto", NACIMIENTO)))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto,
-                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", null, null, null)))
+                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", NACIMIENTO, null, null)))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
 
         assertThatThrownBy(() -> servicio.desactivar(idGrupo, idAdulto)).isInstanceOf(ExcepcionAccesoDenegado.class);
@@ -304,7 +403,7 @@ class ServicioAdultosMayoresTest {
         autenticar(uidCoordinadorB);
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupoA, 999_999_999L,
-                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", null, null, null)))
+                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", NACIMIENTO, null, null)))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
     }
 
@@ -321,7 +420,7 @@ class ServicioAdultosMayoresTest {
         autenticar(uidCoordinadorA);
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupoA, idAdultoB,
-                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", null, null, null)))
+                new SolicitudGuardarAdultoMayor(null, "Nuevo nombre", NACIMIENTO, null, null)))
                 .isInstanceOf(ExcepcionNoEncontrado.class)
                 .hasMessage("El adulto mayor no existe");
     }
@@ -420,6 +519,20 @@ class ServicioAdultosMayoresTest {
         Long cantidadFilas = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM ADULTO_MAYOR WHERE ID_ADULTO_MAYOR = ?", Long.class, idAdulto);
         assertThat(cantidadFilas).isEqualTo(1);
+    }
+
+    private long adultosDelGrupo(long idGrupo) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM ADULTO_MAYOR WHERE ID_GRUPO = ?", Long.class,
+                idGrupo);
+    }
+
+    private SolicitudCrearAdultoMayor alta(String codigo, String nombre, LocalDate fechaNacimiento) {
+        return new SolicitudCrearAdultoMayor(codigo, nombre, fechaNacimiento, null, null, contactoPrincipal());
+    }
+
+    private SolicitudContactoPrincipal contactoPrincipal() {
+        return new SolicitudContactoPrincipal("Contacto del alta", fixturaAdultos.idParentesco("HIJO"),
+                "+56 9 8765 4321");
     }
 
     private long idEstado(String tabla, String codigo) {

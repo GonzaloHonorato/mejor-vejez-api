@@ -12,6 +12,9 @@ El esquema lo crea **Flyway** al arrancar la API, con las migraciones de
 | V1 | `V1__tablas.sql` | Crea las 27 tablas con sus PK, FK, UNIQUE y CHECK. |
 | V2 | `V2__catalogos.sql` | Carga estados, roles de grupo y opciones de negocio con `MERGE`. |
 | V3 | `V3__indices_y_triggers.sql` | Índices de consulta, índices únicos basados en función (leen IDs del catálogo) y triggers de inmutabilidad. |
+| V4 | `V4__corrige_indice_codigo_adulto.sql` | Reemplaza `UQ_ADULTO_GRUPO_CODIGO` por un índice que no choca con códigos nulos. |
+| V5 | `V5__envios_reporte.sql` | Registro de envíos del reporte semanal (`ENVIO_REPORTE`, `ENVIO_REPORTE_DESTINATARIO`). |
+| V6 | `V6__parentesco_y_contactos.sql` | Catálogo `PARENTESCO` (15 valores, formas femeninas separadas) y `CONTACTO_EMERGENCIA.ID_PARENTESCO` (nula, FK al catálogo); completa el ID de los contactos antiguos cuyo texto coincide. |
 
 Flyway registra lo aplicado en la tabla `flyway_schema_history` y nunca vuelve a
 ejecutar una versión. **No edites una migración ya aplicada:** cualquier cambio

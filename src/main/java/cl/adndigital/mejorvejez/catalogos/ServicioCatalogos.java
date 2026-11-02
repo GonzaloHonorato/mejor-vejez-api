@@ -69,12 +69,22 @@ public class ServicioCatalogos {
 
     /** Verifica que {@code idOpcion} pertenezca al catálogo {@code tipo}. */
     public void validarOpcion(long idOpcion, TipoCatalogo tipo) {
-        boolean perteneceAlTipo = repositorioOpcion.findById(idOpcion)
+        opcionValida(idOpcion, tipo, "La opción indicada no pertenece al catálogo " + tipo);
+    }
+
+    /**
+     * Igual que {@link #validarOpcion}, pero devuelve la opción (para guardar
+     * su descripción) y usa {@code mensajeSiInvalida} como texto del error,
+     * para que el usuario no vea el nombre interno del catálogo.
+     *
+     * @throws ExcepcionReglaNegocio {@code idOpcion} no existe o es de otro tipo.
+     */
+    public RespuestaOpcion opcionValida(long idOpcion, TipoCatalogo tipo, String mensajeSiInvalida) {
+        return repositorioOpcion.findById(idOpcion)
                 .filter(opcion -> opcion.getTipoCatalogo() == tipo)
-                .isPresent();
-        if (!perteneceAlTipo) {
-            throw new ExcepcionReglaNegocio("La opción indicada no pertenece al catálogo " + tipo);
-        }
+                .map(opcion -> new RespuestaOpcion(opcion.getIdOpcion(), opcion.getCodigo(),
+                        opcion.getDescripcion(), opcion.getOrden()))
+                .orElseThrow(() -> new ExcepcionReglaNegocio(mensajeSiInvalida));
     }
 
     /** Estados activos del dominio {@code tabla.campo}, en orden de presentación. */

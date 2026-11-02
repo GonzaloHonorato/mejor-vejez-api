@@ -63,7 +63,7 @@ class ServicioPerfilTest {
         Usuario actualizado = servicioPerfil.actualizar(usuario, "  Nuevo Nombre  ", " +56 9 1234 5678 ");
 
         assertThat(actualizado.getNombre()).isEqualTo("Nuevo Nombre");
-        assertThat(actualizado.getTelefono()).isEqualTo("+56 9 1234 5678");
+        assertThat(actualizado.getTelefono()).isEqualTo("+56912345678");
         assertThat(actualizado.getFechaActualizacion())
                 .isEqualTo(OffsetDateTime.ofInstant(instanteFijo, ZoneOffset.UTC));
     }
@@ -77,6 +77,31 @@ class ServicioPerfilTest {
         Usuario actualizado = servicioPerfil.actualizar(usuario, "Ana", "");
 
         assertThat(actualizado.getTelefono()).isNull();
+    }
+
+    @Test
+    void telefonoAntiguoSinCambiosNoImpideGuardarElNombre() {
+        Usuario usuario = darDeAltaUsuario("Ana");
+        jdbcTemplate.update("UPDATE USUARIO SET TELEFONO = '+1 555 123 4567' WHERE ID_USUARIO = ?",
+                usuario.getIdUsuario());
+        Usuario conTelefonoAntiguo = repositorioUsuario.findById(usuario.getIdUsuario()).orElseThrow();
+        ServicioPerfil servicioPerfil = servicioPerfilConReloj(Clock.systemUTC());
+
+        Usuario actualizado = servicioPerfil.actualizar(conTelefonoAntiguo, "Ana María", "+1 555 123 4567");
+
+        assertThat(actualizado.getNombre()).isEqualTo("Ana María");
+        assertThat(actualizado.getTelefono()).isEqualTo("+1 555 123 4567");
+    }
+
+    @Test
+    void telefonoNuevoInvalidoSeRechazaConErrorDeCampo() {
+        Usuario usuario = darDeAltaUsuario("Ana");
+        ServicioPerfil servicioPerfil = servicioPerfilConReloj(Clock.systemUTC());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> servicioPerfil.actualizar(usuario, "Ana", "+1 555 123 4567"))
+                .isInstanceOf(cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido.class)
+                .hasMessage("Ingresa un teléfono chileno: +56 y 9 dígitos.");
     }
 
     @Test

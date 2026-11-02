@@ -25,6 +25,11 @@ public class ControladorPruebaErrores {
         throw new ExcepcionNoEncontrado("El recurso solicitado no existe.");
     }
 
+    @GetMapping("/campo-invalido")
+    public void campoInvalido() {
+        throw new ExcepcionCampoInvalido("telefono", "Ingresa un teléfono chileno: +56 y 9 dígitos.");
+    }
+
     @GetMapping("/regla-negocio")
     public void reglaNegocio() {
         throw new ExcepcionReglaNegocio("La operación viola una regla de negocio.");

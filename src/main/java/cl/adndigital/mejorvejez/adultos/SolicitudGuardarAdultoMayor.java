@@ -3,11 +3,14 @@ package cl.adndigital.mejorvejez.adultos;
 import java.time.LocalDate;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * Datos para crear o actualizar un adulto mayor ({@code POST .../adultos},
- * {@code PUT .../adultos/{idAdulto}}).
+ * Datos del perfil de un adulto mayor: el cuerpo de {@code PUT
+ * .../adultos/{idAdulto}} y la parte del perfil de {@link
+ * SolicitudCrearAdultoMayor} ({@code POST .../adultos}). La fecha de
+ * nacimiento es obligatoria (D1).
  *
  * <p>El constructor compacto recorta espacios de todos los textos y convierte
  * los opcionales en blanco ({@code codigoInterno}, {@code notasEmergencia},
@@ -21,6 +24,7 @@ public record SolicitudGuardarAdultoMayor(
         @NotBlank(message = "El nombre completo es obligatorio.")
         @Size(max = 180, message = "El nombre completo no puede superar los 180 caracteres.")
         String nombreCompleto,
+        @NotNull(message = "La fecha de nacimiento es obligatoria.")
         LocalDate fechaNacimiento,
         @Size(max = 1000, message = "Las notas de emergencia no pueden superar los 1000 caracteres.")
         String notasEmergencia,

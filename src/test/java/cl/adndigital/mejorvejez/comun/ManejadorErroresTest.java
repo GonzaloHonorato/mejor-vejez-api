@@ -42,6 +42,15 @@ class ManejadorErroresTest {
     }
 
     @Test
+    void campoInvalidoDevuelve400ConElErrorDelCampo() throws Exception {
+        mockMvc.perform(get("/api/prueba-errores/campo-invalido").with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Datos inválidos"))
+                .andExpect(jsonPath("$.errores[0].campo").value("telefono"))
+                .andExpect(jsonPath("$.errores[0].mensaje").value("Ingresa un teléfono chileno: +56 y 9 dígitos."));
+    }
+
+    @Test
     void reglaDeNegocioDevuelve422() throws Exception {
         mockMvc.perform(get("/api/prueba-errores/regla-negocio").with(jwt()))
                 .andExpect(status().isUnprocessableEntity())

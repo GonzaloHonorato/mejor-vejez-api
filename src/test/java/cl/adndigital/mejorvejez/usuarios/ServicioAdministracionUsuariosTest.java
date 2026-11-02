@@ -124,7 +124,7 @@ class ServicioAdministracionUsuariosTest {
         Usuario actualizado = servicio.actualizar(idUsuario, "Nuevo Nombre", "+56 9 1234 5678", true);
 
         assertThat(actualizado.getNombre()).isEqualTo("Nuevo Nombre");
-        assertThat(actualizado.getTelefono()).isEqualTo("+56 9 1234 5678");
+        assertThat(actualizado.getTelefono()).isEqualTo("+56912345678");
         assertThat(actualizado.getEsAdministrador()).isTrue();
 
         List<Map<String, Object>> eventos = jdbcTemplate.queryForList(
@@ -140,6 +140,24 @@ class ServicioAdministracionUsuariosTest {
         @SuppressWarnings("unchecked")
         List<String> campos = (List<String>) detalles.get("campos");
         assertThat(campos).containsExactlyInAnyOrder("nombre", "telefono", "esAdministrador");
+    }
+
+    @Test
+    void telefonoAntiguoSinCambiosNoImpideEditarYUnoNuevoInvalidoSeRechaza() {
+        String uidAdmin = FixturaGrupos.uidUnico();
+        fixtura.crearUsuario(uidAdmin, true);
+        long idUsuario = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);
+        jdbcTemplate.update("UPDATE USUARIO SET TELEFONO = '22 345' WHERE ID_USUARIO = ?", idUsuario);
+        autenticar(uidAdmin);
+
+        Usuario actualizado = servicio.actualizar(idUsuario, "Otro Nombre", "22 345", false);
+
+        assertThat(actualizado.getNombre()).isEqualTo("Otro Nombre");
+        assertThat(actualizado.getTelefono()).isEqualTo("22 345");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> servicio.actualizar(idUsuario, "Otro Nombre", "22 346", false))
+                .isInstanceOf(cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido.class)
+                .hasMessage("Ingresa un teléfono chileno: +56 y 9 dígitos.");
     }
 
     @Test

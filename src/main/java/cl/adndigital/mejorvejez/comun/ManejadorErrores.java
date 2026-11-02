@@ -61,6 +61,14 @@ public class ManejadorErrores {
         return construirProblema(HttpStatus.BAD_REQUEST, "Datos inválidos", excepcion.getMessage());
     }
 
+    @ExceptionHandler(ExcepcionCampoInvalido.class)
+    public ProblemDetail manejarCampoInvalido(ExcepcionCampoInvalido excepcion) {
+        ProblemDetail problema = construirProblema(HttpStatus.BAD_REQUEST, "Datos inválidos",
+                "La solicitud tiene uno o más campos inválidos.");
+        problema.setProperty("errores", List.of(new ErrorCampo(excepcion.getCampo(), excepcion.getMessage())));
+        return problema;
+    }
+
     @ExceptionHandler(ExcepcionNoAutenticado.class)
     public ProblemDetail manejarNoAutenticado(ExcepcionNoAutenticado excepcion) {
         return construirProblema(HttpStatus.UNAUTHORIZED, ExcepcionNoAutenticado.TITULO, excepcion.getMessage());

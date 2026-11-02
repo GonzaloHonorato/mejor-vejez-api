@@ -24,7 +24,8 @@ import cl.adndigital.mejorvejez.comun.ConvertidorSiNo;
  * A lo más un contacto ACTIVO con {@code ES_PRINCIPAL = 'S'} por adulto
  * mayor ({@code UX_CONTACTO_PRINCIPAL_ACTIVO}, V3): red de seguridad de la
  * regla de negocio del contacto principal único (HU-03). {@code
- * TIPO_CONTACTO} es siempre {@code EMERGENCIA} en este MVP. Estado en el
+ * TIPO_CONTACTO} es siempre {@code EMERGENCIA} en este MVP. El parentesco
+ * se elige del catálogo {@code PARENTESCO} (V6). Estado en el
  * catálogo {@code CONTACTO_EMERGENCIA.ESTADO} (ACTIVO / INACTIVO).
  */
 @Entity
@@ -46,6 +47,14 @@ public class ContactoEmergencia {
     @Column(name = "NOMBRE_CONTACTO", nullable = false, length = 160)
     private String nombreContacto;
 
+    /** Opción del catálogo {@code PARENTESCO}; nula en los contactos anteriores a V6. */
+    @Column(name = "ID_PARENTESCO")
+    private Long idParentesco;
+
+    /**
+     * Descripción de {@link #idParentesco} (copiada para lectura simple), o
+     * el texto libre de los contactos anteriores a V6.
+     */
     @Column(name = "PARENTESCO", length = 80)
     private String parentesco;
 
@@ -74,10 +83,11 @@ public class ContactoEmergencia {
     private OffsetDateTime fechaActualizacion;
 
     /** Contacto nuevo del adulto mayor indicado ({@code POST .../adultos/{idAdulto}/contactos}). */
-    public ContactoEmergencia(long idAdultoMayor, String nombreContacto, String parentesco, String telefono,
-            boolean esPrincipal, long idEstado, long idUsuarioCreador, OffsetDateTime fechaCreacion) {
+    public ContactoEmergencia(long idAdultoMayor, String nombreContacto, long idParentesco, String parentesco,
+            String telefono, boolean esPrincipal, long idEstado, long idUsuarioCreador, OffsetDateTime fechaCreacion) {
         this.idAdultoMayor = idAdultoMayor;
         this.nombreContacto = nombreContacto;
+        this.idParentesco = idParentesco;
         this.parentesco = parentesco;
         this.telefono = telefono;
         this.tipoContacto = TIPO_CONTACTO_EMERGENCIA;
@@ -88,8 +98,10 @@ public class ContactoEmergencia {
     }
 
     /** Actualiza nombre, parentesco y teléfono ({@code PATCH .../contactos/{idContacto}}). */
-    public void actualizar(String nombreContacto, String parentesco, String telefono, OffsetDateTime ahora) {
+    public void actualizar(String nombreContacto, long idParentesco, String parentesco, String telefono,
+            OffsetDateTime ahora) {
         this.nombreContacto = nombreContacto;
+        this.idParentesco = idParentesco;
         this.parentesco = parentesco;
         this.telefono = telefono;
         this.fechaActualizacion = ahora;

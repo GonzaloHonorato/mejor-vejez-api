@@ -130,14 +130,53 @@ class ServicioCanalesTest {
     }
 
     @Test
-    void whatsappSinFormatoE164Da422() {
+    void whatsappQueNoEsChilenoDa422() {
         darDeAltaUsuario("Ana");
 
+        for (String invalido : List.of("+5491123456789", "12345", "", "abc")) {
+            assertThatThrownBy(() -> servicioCanales.actualizarMisCanales(new SolicitudActualizarCanales(List.of(
+                    new SolicitudCanal(CodigosNotificaciones.CANAL_CORREO, correoDePrueba(), true),
+                    new SolicitudCanal(CodigosNotificaciones.CANAL_WHATSAPP, invalido, true)))))
+                    .isInstanceOf(ExcepcionReglaNegocio.class)
+                    .hasMessage("Ingresa un teléfono chileno: +56 y 9 dígitos.");
+        }
+    }
+
+    @Test
+    void whatsappAntiguoSinCambiosPermiteGuardarElCorreo() {
+        Usuario usuario = darDeAltaUsuario("Ana");
+        jdbcTemplate.update("INSERT INTO CANAL_NOTIFICACION_USUARIO (ID_USUARIO, CANAL, DESTINO, HABILITADO) "
+                + "VALUES (?, 'WHATSAPP', '+5491123456789', 'N')", usuario.getIdUsuario());
+        String correoNuevo = correoDePrueba();
+
+        RespuestaCanales respuesta = servicioCanales.actualizarMisCanales(new SolicitudActualizarCanales(List.of(
+                new SolicitudCanal(CodigosNotificaciones.CANAL_CORREO, correoNuevo, true),
+                new SolicitudCanal(CodigosNotificaciones.CANAL_WHATSAPP, "+5491123456789", true))));
+
+        assertThat(respuesta.canales().get(0).destino()).isEqualTo(correoNuevo);
+        assertThat(respuesta.canales().get(1).destino()).isEqualTo("+5491123456789");
+        assertThat(respuesta.canales().get(1).habilitado()).isTrue();
+
         assertThatThrownBy(() -> servicioCanales.actualizarMisCanales(new SolicitudActualizarCanales(List.of(
-                new SolicitudCanal(CodigosNotificaciones.CANAL_CORREO, correoDePrueba(), true),
-                new SolicitudCanal(CodigosNotificaciones.CANAL_WHATSAPP, "912345678", true)))))
+                new SolicitudCanal(CodigosNotificaciones.CANAL_CORREO, correoNuevo, true),
+                new SolicitudCanal(CodigosNotificaciones.CANAL_WHATSAPP, "+5491123456780", true)))))
                 .isInstanceOf(ExcepcionReglaNegocio.class)
-                .hasMessage("El número de WhatsApp debe tener formato internacional, por ejemplo +56912345678.");
+                .hasMessage("Ingresa un teléfono chileno: +56 y 9 dígitos.");
+    }
+
+    @Test
+    void whatsappSeGuardaNormalizado() {
+        Usuario usuario = darDeAltaUsuario("Ana");
+
+        RespuestaCanales respuesta = servicioCanales.actualizarMisCanales(new SolicitudActualizarCanales(List.of(
+                new SolicitudCanal(CodigosNotificaciones.CANAL_CORREO, correoDePrueba(), true),
+                new SolicitudCanal(CodigosNotificaciones.CANAL_WHATSAPP, " 9 1234-5678 ", false))));
+
+        assertThat(respuesta.canales().get(1).destino()).isEqualTo("+56912345678");
+        assertThat(repositorioCanal.findByIdUsuario(usuario.getIdUsuario()))
+                .filteredOn(fila -> CodigosNotificaciones.CANAL_WHATSAPP.equals(fila.getCanal()))
+                .extracting(CanalNotificacionUsuario::getDestino)
+                .containsExactly("+56912345678");
     }
 
     @Test

@@ -74,6 +74,46 @@ class ServicioCatalogosTest {
     }
 
     @Test
+    void listarOpcionesDeParentescoDevuelveQuinceEnOrden() {
+        List<RespuestaOpcion> opciones = servicioCatalogos.listarOpciones(TipoCatalogo.PARENTESCO);
+
+        assertThat(opciones).extracting(RespuestaOpcion::descripcion)
+                .containsExactly("Padre", "Madre", "Hijo", "Hija", "Nieto", "Nieta", "Hermano", "Hermana", "Tío",
+                        "Tía", "Sobrino", "Sobrina", "Cónyuge", "Yerno", "Nuera");
+    }
+
+    @Test
+    void opcionValidaDevuelveLaOpcionDelTipo() {
+        long idTio = idOpcion("PARENTESCO", "TIO");
+
+        RespuestaOpcion opcion = servicioCatalogos.opcionValida(idTio, TipoCatalogo.PARENTESCO,
+                "El parentesco indicado no es válido.");
+
+        assertThat(opcion.codigo()).isEqualTo("TIO");
+        assertThat(opcion.descripcion()).isEqualTo("Tío");
+    }
+
+    @Test
+    void opcionValidaDeOtroTipoLanzaElMensajeIndicado() {
+        long idLunes = idOpcion("DIA_SEMANA", "LUNES");
+
+        ExcepcionReglaNegocio excepcion = assertThrows(ExcepcionReglaNegocio.class,
+                () -> servicioCatalogos.opcionValida(idLunes, TipoCatalogo.PARENTESCO,
+                        "El parentesco indicado no es válido."));
+
+        assertThat(excepcion.getMessage()).isEqualTo("El parentesco indicado no es válido.");
+    }
+
+    @Test
+    void opcionValidaInexistenteLanzaElMensajeIndicado() {
+        ExcepcionReglaNegocio excepcion = assertThrows(ExcepcionReglaNegocio.class,
+                () -> servicioCatalogos.opcionValida(-1L, TipoCatalogo.PARENTESCO,
+                        "El parentesco indicado no es válido."));
+
+        assertThat(excepcion.getMessage()).isEqualTo("El parentesco indicado no es válido.");
+    }
+
+    @Test
     void listarEstadosDevuelveSoloActivosOrdenadosPorOrden() {
         // Dentro de la transacción de la prueba (rollback automático al
         // terminar): marca CANCELADA inactiva para verificar que se excluye.
@@ -92,5 +132,11 @@ class ServicioCatalogosTest {
 
         assertThat(estados).extracting(RespuestaEstado::codigo).containsExactlyElementsOf(codigosEsperados);
         assertThat(estados).extracting(RespuestaEstado::codigo).doesNotContain("CANCELADA");
+    }
+
+    private long idOpcion(String tipo, String codigo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT ID_OPCION FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = ? AND CODIGO = ?",
+                Long.class, tipo, codigo);
     }
 }

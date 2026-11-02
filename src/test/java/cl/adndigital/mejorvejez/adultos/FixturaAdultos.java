@@ -62,6 +62,27 @@ public class FixturaAdultos {
         return idContacto;
     }
 
+    /**
+     * Crea un CONTACTO_EMERGENCIA ACTIVO, no principal, como los anteriores a
+     * V6: parentesco en texto libre y sin {@code ID_PARENTESCO}.
+     */
+    public long crearContactoConParentescoEnTexto(long idAdulto, long idCreador, String parentesco) {
+        return insertarYObtenerId(
+                "INSERT INTO CONTACTO_EMERGENCIA "
+                        + "(ID_ADULTO_MAYOR, NOMBRE_CONTACTO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, "
+                        + "ID_USUARIO_CREADOR) VALUES (?, ?, ?, ?, 'N', ?, ?)",
+                "ID_CONTACTO",
+                idAdulto, "Contacto antiguo", parentesco, "+56900000000",
+                idEstado("CONTACTO_EMERGENCIA", "ACTIVO"), idCreador);
+    }
+
+    /** ID de la opción {@code codigo} del catálogo {@code PARENTESCO} (p. ej. {@code HIJO}). */
+    public long idParentesco(String codigo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT ID_OPCION FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'PARENTESCO' AND CODIGO = ?",
+                Long.class, codigo);
+    }
+
     private long idEstado(String tabla, String codigo) {
         return jdbcTemplate.queryForObject(
                 "SELECT ID_ESTADO FROM CATALOGO_ESTADOS "

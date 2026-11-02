@@ -1,39 +1,37 @@
 package cl.adndigital.mejorvejez.adultos;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import cl.adndigital.mejorvejez.comun.TelefonoChileno;
+import cl.adndigital.mejorvejez.comun.TelefonoChilenoValido;
 
 /**
  * Datos para crear un contacto de emergencia ({@code POST
  * .../adultos/{idAdulto}/contactos}).
  *
- * <p>El constructor compacto recorta espacios de los textos y convierte
- * {@code parentesco} en blanco a {@code null}, antes de que corra Bean
- * Validation, igual que {@link SolicitudGuardarAdultoMayor}.
+ * <p>{@code idParentesco} es una opción del catálogo {@code PARENTESCO}
+ * ({@code GET /api/catalogos/opciones?tipo=PARENTESCO}); {@link
+ * ServicioContactos} verifica que pertenezca a ese catálogo.
+ *
+ * <p>El constructor compacto recorta el nombre y normaliza el teléfono
+ * ({@link TelefonoChileno}) antes de que corra Bean Validation, igual que
+ * {@link SolicitudGuardarAdultoMayor}.
  */
 public record SolicitudCrearContacto(
         @NotBlank(message = "El nombre del contacto es obligatorio.")
         @Size(max = 160, message = "El nombre del contacto no puede superar los 160 caracteres.")
         String nombreContacto,
-        @Size(max = 80, message = "El parentesco no puede superar los 80 caracteres.")
-        String parentesco,
+        @NotNull(message = "El parentesco es obligatorio.")
+        Long idParentesco,
         @NotBlank(message = "El teléfono es obligatorio.")
-        @Pattern(regexp = "^\\+?[0-9][0-9 ()-]{5,29}$", message = "Ingresa un teléfono válido")
+        @TelefonoChilenoValido
         String telefono,
         Boolean esPrincipal) {
 
     public SolicitudCrearContacto {
         nombreContacto = nombreContacto == null ? null : nombreContacto.trim();
-        parentesco = normalizarOpcional(parentesco);
-        telefono = telefono == null ? null : telefono.trim();
-    }
-
-    private static String normalizarOpcional(String valor) {
-        if (valor == null) {
-            return null;
-        }
-        String recortado = valor.trim();
-        return recortado.isEmpty() ? null : recortado;
+        telefono = TelefonoChileno.normalizarSiEsValido(telefono);
     }
 }

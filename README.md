@@ -33,7 +33,7 @@ La aplicación web (`mejor-vejez-web`, puerto 4200) solo habla con este core.
 
 | GET | `/api/yo` | token | `200` con el usuario autenticado; lo da de alta en su primer ingreso |
 | GET | `/api/catalogos/estados?tabla=&campo=` | token | `200` con los estados de ese campo, p. ej. `?tabla=USUARIO&campo=ESTADO` |
-| GET | `/api/catalogos/opciones?tipo=` | token | `200` con las opciones del tipo (`PRESENTACION_MEDICAMENTO`, `UNIDAD_DOSIS`, `DIA_SEMANA`) |
+| GET | `/api/catalogos/opciones?tipo=` | token | `200` con las opciones del tipo (`PRESENTACION_MEDICAMENTO`, `UNIDAD_DOSIS`, `DIA_SEMANA`, `PARENTESCO`) |
 | POST | `/api/usuarios` | administrador | `201` crea la cuenta (Firebase + core) y devuelve la contraseña temporal una sola vez |
 | POST | `/api/usuarios/{id}/reenviar-acceso` | administrador | `200` fija una contraseña temporal nueva, la envía por correo y la devuelve una vez |
 | POST | `/api/grupos/{idGrupo}/integrantes/nuevo` | coordinador del grupo o administrador | `201` crea la cuenta del integrante y lo suma al grupo; `429` si un coordinador (no administrador) supera 20 altas en 60 min |
@@ -61,6 +61,19 @@ En la creación de cuentas, un correo que ya existe (en el core o en Firebase) r
 `estados` y `opciones` devuelven solo los registros activos, ordenados por `orden` (lista vacía si no hay), para armar selects:
 `[{ "idEstado": 1, "codigo": "ACTIVO", "descripcion": "Activo", "orden": 1 }]`
 (en `opciones` el id es `idOpcion`). Falta un parámetro o `tipo` inválido → `400`.
+
+### Adulto mayor, contactos y teléfono
+
+- **Alta del adulto mayor** (`POST /api/grupos/{idGrupo}/adultos`): `fechaNacimiento` (no futura) y `contactoPrincipal` son obligatorios; el adulto y su contacto principal se crean en la misma transacción. En la edición (`PUT .../adultos/{idAdulto}`) la fecha también es obligatoria.
+
+  ```json
+  { "nombreCompleto": "Rosa Díaz", "fechaNacimiento": "1944-02-01", "codigoInterno": null,
+    "notasEmergencia": null, "observacionesGenerales": null,
+    "contactoPrincipal": { "nombre": "Pedro Díaz", "idParentesco": 223, "telefono": "+56 9 1234 5678" } }
+  ```
+
+- **Contactos** (`POST`/`PUT .../adultos/{idAdulto}/contactos`): `nombreContacto`, `idParentesco` (opción de `GET /api/catalogos/opciones?tipo=PARENTESCO`) y `telefono`, los tres obligatorios. La respuesta trae `idParentesco` y `parentesco` (la descripción; en contactos anteriores al catálogo, su texto libre e `idParentesco: null`). Un parentesco de otro catálogo → `422` "El parentesco indicado no es válido.".
+- **Teléfono** (contactos, `PATCH /api/yo`, `POST`/`PATCH /api/usuarios` y WhatsApp en `PUT /api/yo/canales`): chileno, `+56` y 9 dígitos, con o sin `+56`, con espacios o guiones (`+56 9 1234 5678`, `912345678`). Se guarda normalizado (`+56912345678`). Si no cumple: `400` con `errores[].mensaje` "Ingresa un teléfono chileno: +56 y 9 dígitos." (en canales, `422` con ese `detail`). En el perfil y en usuarios es opcional.
 
 ### Errores
 
@@ -161,7 +174,7 @@ base64 -i Wallet_MEJORVEJEZ.zip | tr -d '\n' | pbcopy
    CLAVE_SERVICIO=<la clave compartida> ./mvnw spring-boot:run   # http://localhost:8080/api/salud
    ```
 
-   Flyway crea el esquema (3 migraciones) en el Oracle local al arrancar.
+   Flyway crea el esquema (migraciones V1–V6) en el Oracle local al arrancar.
 
    **Correo y reportes (Fase 9):** este core ya no envía correos ni genera
    PDFs. Para probar la detección de atrasos, las alertas preventivas o el

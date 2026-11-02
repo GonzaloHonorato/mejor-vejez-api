@@ -64,11 +64,13 @@ class ServicioContactosTest {
 
     private FixturaGrupos fixturaGrupos;
     private FixturaAdultos fixturaAdultos;
+    private long idHijo;
 
     @BeforeEach
     void prepararFixturas() {
         fixturaGrupos = new FixturaGrupos(jdbcTemplate);
         fixturaAdultos = new FixturaAdultos(jdbcTemplate);
+        idHijo = fixturaAdultos.idParentesco("HIJO");
     }
 
     @AfterEach
@@ -84,9 +86,125 @@ class ServicioContactosTest {
         long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
 
         RespuestaContacto creado = servicio.crear(idGrupo, idAdulto,
-                new SolicitudCrearContacto("Primer contacto", null, "+56912345678", null));
+                new SolicitudCrearContacto("Primer contacto", idHijo, "+56912345678", null));
 
         assertThat(creado.esPrincipal()).isTrue();
+    }
+
+    @Test
+    void crearGuardaElIdYLaDescripcionDelParentesco() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        long idTio = fixturaAdultos.idParentesco("TIO");
+
+        RespuestaContacto creado = servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Carlos Pérez", idTio, "+56912345678", null));
+
+        assertThat(creado.idParentesco()).isEqualTo(idTio);
+        assertThat(creado.parentesco()).isEqualTo("Tío");
+        Map<String, Object> fila = jdbcTemplate.queryForMap(
+                "SELECT ID_PARENTESCO, PARENTESCO FROM CONTACTO_EMERGENCIA WHERE ID_CONTACTO = ?",
+                creado.idContacto());
+        assertThat(((Number) fila.get("ID_PARENTESCO")).longValue()).isEqualTo(idTio);
+        assertThat(fila.get("PARENTESCO")).isEqualTo("Tío");
+    }
+
+    @Test
+    void crearConParentescoDeOtroCatalogoDevuelve422SinGuardar() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        long idLunes = jdbcTemplate.queryForObject(
+                "SELECT ID_OPCION FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'DIA_SEMANA' AND CODIGO = 'LUNES'",
+                Long.class);
+
+        assertThatThrownBy(() -> servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Carlos Pérez", idLunes, "+56912345678", null)))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El parentesco indicado no es válido.");
+
+        Long cantidad = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM CONTACTO_EMERGENCIA WHERE ID_ADULTO_MAYOR = ?", Long.class, idAdulto);
+        assertThat(cantidad).isZero();
+    }
+
+    @Test
+    void crearGuardaElTelefonoNormalizado() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+
+        RespuestaContacto creado = servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Carlos Pérez", idHijo, " +56 9 1234-5678 ", null));
+
+        assertThat(creado.telefono()).isEqualTo("+56912345678");
+        String guardado = jdbcTemplate.queryForObject(
+                "SELECT TELEFONO FROM CONTACTO_EMERGENCIA WHERE ID_CONTACTO = ?", String.class, creado.idContacto());
+        assertThat(guardado).isEqualTo("+56912345678");
+    }
+
+    @Test
+    void contactoAntiguoMuestraSuTextoYAlEditarloPasaAlCatalogo() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        long idAntiguo = fixturaAdultos.crearContactoConParentescoEnTexto(idAdulto, idCoordinador, "Vecina");
+
+        RespuestaContacto listado = servicio.listar(idGrupo, idAdulto).get(0);
+        assertThat(listado.idParentesco()).isNull();
+        assertThat(listado.parentesco()).isEqualTo("Vecina");
+
+        long idSobrino = fixturaAdultos.idParentesco("SOBRINO");
+        RespuestaContacto editado = servicio.actualizar(idGrupo, idAdulto, idAntiguo,
+                new SolicitudActualizarContacto("Contacto antiguo", idSobrino, "+56900000000"));
+
+        assertThat(editado.idParentesco()).isEqualTo(idSobrino);
+        assertThat(editado.parentesco()).isEqualTo("Sobrino");
+        String detallesJson = jdbcTemplate.queryForObject(
+                "SELECT DETALLES_JSON FROM EVENTO_AUDITORIA WHERE TIPO_ENTIDAD = 'CONTACTO_EMERGENCIA' "
+                        + "AND ID_ENTIDAD = ? AND CODIGO_ACCION = 'ACTUALIZAR_CONTACTO'",
+                String.class, String.valueOf(idAntiguo));
+        Map<String, Object> detalles = JsonMapper.builder().build()
+                .readValue(detallesJson, new TypeReference<Map<String, Object>>() {
+                });
+        assertThat(detalles.get("camposModificados")).isEqualTo(List.of("parentesco"));
+    }
+
+    @Test
+    void parentescoNuloEnElServicioDevuelve422() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        long idContacto = fixturaAdultos.crearContacto(idAdulto, idCoordinador, true, "ACTIVO");
+
+        assertThatThrownBy(() -> servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Carlos", null, "+56912345678", null)))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El parentesco es obligatorio.");
+        assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto, idContacto,
+                new SolicitudActualizarContacto("Contacto fixtura", null, "+56900000000")))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El parentesco es obligatorio.");
+    }
+
+    @Test
+    void actualizarConParentescoInvalidoDevuelve422() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        long idContacto = fixturaAdultos.crearContacto(idAdulto, idCoordinador, true, "ACTIVO");
+
+        assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto, idContacto,
+                new SolicitudActualizarContacto("Contacto fixtura", -5L, "+56900000000")))
+                .isInstanceOf(ExcepcionReglaNegocio.class)
+                .hasMessage("El parentesco indicado no es válido.");
     }
 
     @Test
@@ -96,9 +214,9 @@ class ServicioContactosTest {
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
 
-        servicio.crear(idGrupo, idAdulto, new SolicitudCrearContacto("Primero", null, "+56912345678", null));
+        servicio.crear(idGrupo, idAdulto, new SolicitudCrearContacto("Primero", idHijo, "+56912345678", null));
         RespuestaContacto segundo = servicio.crear(idGrupo, idAdulto,
-                new SolicitudCrearContacto("Segundo", null, "+56987654321", null));
+                new SolicitudCrearContacto("Segundo", idHijo, "+56987654321", null));
 
         assertThat(segundo.esPrincipal()).isFalse();
     }
@@ -111,9 +229,9 @@ class ServicioContactosTest {
         long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
 
         RespuestaContacto primero = servicio.crear(idGrupo, idAdulto,
-                new SolicitudCrearContacto("Primero", null, "+56912345678", null));
+                new SolicitudCrearContacto("Primero", idHijo, "+56912345678", null));
         RespuestaContacto segundo = servicio.crear(idGrupo, idAdulto,
-                new SolicitudCrearContacto("Segundo", null, "+56987654321", true));
+                new SolicitudCrearContacto("Segundo", idHijo, "+56987654321", true));
 
         assertThat(segundo.esPrincipal()).isTrue();
 
@@ -420,10 +538,10 @@ class ServicioContactosTest {
         assertThat(listado).extracting(RespuestaContacto::idContacto).contains(idContacto);
 
         assertThatThrownBy(() -> servicio.crear(idGrupo, idAdulto,
-                new SolicitudCrearContacto("Nuevo", null, "+56911111111", null)))
+                new SolicitudCrearContacto("Nuevo", idHijo, "+56911111111", null)))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto, idContacto,
-                new SolicitudActualizarContacto("Otro nombre", null, "+56911111111")))
+                new SolicitudActualizarContacto("Otro nombre", idHijo, "+56911111111")))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
         assertThatThrownBy(() -> servicio.desactivar(idGrupo, idAdulto, idContacto, null))
                 .isInstanceOf(ExcepcionAccesoDenegado.class);
@@ -446,7 +564,7 @@ class ServicioContactosTest {
         long idContactoDeB = fixturaAdultos.crearContacto(idAdultoB, idCoordinador, true, "ACTIVO");
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdultoA, idContactoDeB,
-                new SolicitudActualizarContacto("Nuevo nombre", null, "+56911111111")))
+                new SolicitudActualizarContacto("Nuevo nombre", idHijo, "+56911111111")))
                 .isInstanceOf(ExcepcionNoEncontrado.class)
                 .hasMessage("El contacto no existe");
     }
@@ -460,7 +578,7 @@ class ServicioContactosTest {
         long idContacto = fixturaAdultos.crearContacto(idAdulto, idCoordinador, true, "ACTIVO");
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto, idContacto,
-                new SolicitudActualizarContacto("Nuevo nombre", null, "+56911111111")))
+                new SolicitudActualizarContacto("Nuevo nombre", idHijo, "+56911111111")))
                 .isInstanceOf(ExcepcionReglaNegocio.class)
                 .hasMessage("El adulto mayor está inactivo; reactívalo para modificarlo");
     }
@@ -474,7 +592,7 @@ class ServicioContactosTest {
         long idContacto = fixturaAdultos.crearContacto(idAdulto, idCoordinador, false, "INACTIVO");
 
         assertThatThrownBy(() -> servicio.actualizar(idGrupo, idAdulto, idContacto,
-                new SolicitudActualizarContacto("Nuevo nombre", null, "+56911111111")))
+                new SolicitudActualizarContacto("Nuevo nombre", idHijo, "+56911111111")))
                 .isInstanceOf(ExcepcionReglaNegocio.class)
                 .hasMessage("El contacto está inactivo; reactívalo para modificarlo");
     }

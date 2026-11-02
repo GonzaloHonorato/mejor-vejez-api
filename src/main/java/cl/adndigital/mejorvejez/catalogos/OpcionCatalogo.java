@@ -22,7 +22,8 @@ import cl.adndigital.mejorvejez.comun.ConvertidorSiNo;
 /**
  * Catálogo de opciones de negocio ({@code CATALOGO_NEGOCIO}): listas de
  * valores fijos por {@link TipoCatalogo} (presentación de medicamento,
- * unidad de dosis, día de semana). Lo siembra {@code V2__catalogos.sql}; la
+ * unidad de dosis, día de semana, parentesco). Lo siembran {@code
+ * V2__catalogos.sql} y {@code V6__parentesco_y_contactos.sql}; la
  * aplicación solo lo lee (ver {@code ServicioCatalogos}).
  */
 @Entity

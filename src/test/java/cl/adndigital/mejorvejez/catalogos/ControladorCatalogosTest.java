@@ -55,6 +55,17 @@ class ControladorCatalogosTest {
     }
 
     @Test
+    void opcionesDeParentescoConTokenDevuelvenLista() throws Exception {
+        when(servicioCatalogos.listarOpciones(eq(TipoCatalogo.PARENTESCO))).thenReturn(List.of(
+                new RespuestaOpcion(30L, "TIO", "Tío", 6)));
+
+        mockMvc.perform(get("/api/catalogos/opciones").param("tipo", "PARENTESCO").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].idOpcion").value(30))
+                .andExpect(jsonPath("$[0].descripcion").value("Tío"));
+    }
+
+    @Test
     void tipoInvalidoDevuelve400() throws Exception {
         mockMvc.perform(get("/api/catalogos/opciones").param("tipo", "NO_EXISTE").with(jwt()))
                 .andExpect(status().isBadRequest())

@@ -10,6 +10,8 @@
 -- Authentication → Users). Sin eso, esos usuarios no podrán iniciar sesión.
 --
 -- Protegido contra doble ejecución: si ya existe el admin demo, no hace nada.
+-- Requiere el esquema hasta V6 (Flyway): ejecutarlo después de arrancar la
+-- API al menos una vez.
 -- Las tareas usan fechas relativas a SYSTIMESTAMP para probar estados.
 --
 -- Nota técnica: las funciones locales de un bloque PL/SQL no se pueden usar
@@ -213,12 +215,18 @@ BEGIN
           e_adulto_activo, v_coord)
   RETURNING ID_ADULTO_MAYOR INTO v_adulto2;
 
-  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
-  VALUES (v_adulto1, 'Contacto Demo Elena', 'Hija', '+56911112001', 'S', e_contacto_activo, v_coord);
-  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
-  VALUES (v_adulto1, 'Segundo Contacto Demo', 'Vecino', '+56911112003', 'N', e_contacto_activo, v_coord);
-  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
-  VALUES (v_adulto2, 'Contacto Demo Héctor', 'Hijo', '+56911112002', 'S', e_contacto_activo, v_coord);
+  -- Parentesco del catálogo PARENTESCO (V6, ronda 2 con formas femeninas
+  -- separadas): ID_PARENTESCO por código y, en PARENTESCO, su descripción,
+  -- igual que lo guarda la API.
+  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, ID_PARENTESCO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
+  SELECT v_adulto1, 'Contacto Demo Elena', ID_OPCION, DESCRIPCION, '+56911112001', 'S', e_contacto_activo, v_coord
+    FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'PARENTESCO' AND CODIGO = 'HIJA';
+  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, ID_PARENTESCO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
+  SELECT v_adulto1, 'Sobrina Demo', ID_OPCION, DESCRIPCION, '+56911112003', 'N', e_contacto_activo, v_coord
+    FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'PARENTESCO' AND CODIGO = 'SOBRINA';
+  INSERT INTO CONTACTO_EMERGENCIA (ID_ADULTO_MAYOR, NOMBRE_CONTACTO, ID_PARENTESCO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, ID_USUARIO_CREADOR)
+  SELECT v_adulto2, 'Contacto Demo Héctor', ID_OPCION, DESCRIPCION, '+56911112002', 'S', e_contacto_activo, v_coord
+    FROM CATALOGO_NEGOCIO WHERE TIPO_CATALOGO = 'PARENTESCO' AND CODIGO = 'HIJO';
 
   -- -------------------------------------------------------------------
   -- 4. Medicamentos (catálogo global, INC-19).

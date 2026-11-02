@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
+import cl.adndigital.mejorvejez.comun.TelefonoChileno;
 
 /**
  * Actualiza el perfil (nombre y teléfono) del usuario autenticado
@@ -39,6 +40,10 @@ public class ServicioPerfil {
      * Actualiza el perfil de {@code usuario} y audita los campos cambiados.
      * Si, tras normalizar, ni el nombre ni el teléfono cambian, no guarda ni
      * audita nada (evita ruido de auditoría en envíos sin cambios reales).
+     * El teléfono sigue {@link TelefonoChileno#aGuardar}: si es el mismo ya
+     * guardado no se valida.
+     *
+     * @throws cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido el teléfono cambió y no es chileno.
      */
     @Transactional
     public Usuario actualizar(Usuario usuario, String nombre, String telefono) {
@@ -46,12 +51,12 @@ public class ServicioPerfil {
         String telefonoAnterior = usuario.getTelefono();
 
         String nombreNormalizado = nombre.trim();
-        String telefonoNormalizado = (telefono == null || telefono.isBlank()) ? null : telefono.trim();
+        String telefonoNormalizado = TelefonoChileno.aGuardar(telefono, telefonoAnterior);
         if (Objects.equals(nombreAnterior, nombreNormalizado) && Objects.equals(telefonoAnterior, telefonoNormalizado)) {
             return usuario;
         }
 
-        usuario.actualizarPerfil(nombre, telefono, OffsetDateTime.now(reloj));
+        usuario.actualizarPerfil(nombre, telefonoNormalizado, OffsetDateTime.now(reloj));
         Usuario guardado = repositorio.save(usuario);
 
         List<String> camposCambiados = new ArrayList<>();

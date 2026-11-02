@@ -330,16 +330,22 @@ class ServicioConsultaAuditoriaTest {
         fixturaGrupos.crearUsuario(uidAdmin, true);
         Escenario e = escenarioCoordinador();
 
-        long idSinGrupo = registrarExito(null, "USUARIO", "1", e.idCoordinador, "ACCION_SIN_GRUPO");
-        long idDelGrupo = registrarExito(e.idGrupo, "GRUPO_FAMILIAR", "1", e.idCoordinador, "ACCION_DEL_GRUPO");
+        // ID_ENTIDAD propio: la base es compartida y el reloj fijo de esta
+        // prueba coincide con la fecha real, así que sin este filtro los
+        // eventos de otras pruebas pueden empujar estos fuera de la página.
+        String idEntidad = "global-" + FixturaGrupos.uidUnico();
+        long idSinGrupo = registrarExito(null, "USUARIO", idEntidad, e.idCoordinador, "ACCION_SIN_GRUPO");
+        long idDelGrupo = registrarExito(e.idGrupo, "GRUPO_FAMILIAR", idEntidad, e.idCoordinador, "ACCION_DEL_GRUPO");
         autenticar(uidAdmin);
 
-        RespuestaPagina<RespuestaEventoAuditoria> sinFiltro = servicio.consultarGlobal(FILTRO_VACIO, 0, 100);
+        FiltroConsultaAuditoria filtroEntidad =
+                new FiltroConsultaAuditoria(null, null, idEntidad, null, null, null, null);
+        RespuestaPagina<RespuestaEventoAuditoria> sinFiltro = servicio.consultarGlobal(filtroEntidad, 0, 100);
         assertThat(sinFiltro.elementos()).extracting(RespuestaEventoAuditoria::idEvento)
                 .contains(idSinGrupo, idDelGrupo);
 
         FiltroConsultaAuditoria filtroGrupo =
-                new FiltroConsultaAuditoria(e.idGrupo, null, null, null, null, null, null);
+                new FiltroConsultaAuditoria(e.idGrupo, null, idEntidad, null, null, null, null);
         RespuestaPagina<RespuestaEventoAuditoria> conFiltro = servicio.consultarGlobal(filtroGrupo, 0, 100);
         assertThat(conFiltro.elementos()).extracting(RespuestaEventoAuditoria::idEvento)
                 .contains(idDelGrupo)

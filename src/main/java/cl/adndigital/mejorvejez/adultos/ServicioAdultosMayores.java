@@ -19,6 +19,7 @@ import cl.adndigital.mejorvejez.auditoria.DetallesAuditoria;
 import cl.adndigital.mejorvejez.auditoria.EventoARegistrar;
 import cl.adndigital.mejorvejez.auditoria.ResultadoAuditoria;
 import cl.adndigital.mejorvejez.auditoria.ServicioAuditoria;
+import cl.adndigital.mejorvejez.catalogos.RespuestaOpcion;
 import cl.adndigital.mejorvejez.catalogos.ServicioCatalogos;
 import cl.adndigital.mejorvejez.comun.ExcepcionConflicto;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoEncontrado;
@@ -37,8 +38,14 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  * {@link #obtener(long, long)} resuelven el contacto principal ACTIVO de
  * cada adulto en una sola consulta ({@code
  * RepositorioContactoEmergencia#findByIdAdultoMayorInAndEsPrincipalTrueAndIdEstado}),
- * nunca una por adulto. Esta tarea no toca contactos: las reglas de
- * designación y traspaso del principal son de la Tarea 3.
+ * nunca una por adulto. Las reglas de designación y traspaso del principal
+ * viven en {@link ServicioContactos}.
+ *
+ * <p><b>Alta con contacto principal.</b> {@link #crear} exige fecha de
+ * nacimiento y contacto principal (D1) y crea ambos en una sola transacción
+ * (el contacto lo crea {@link ServicioContactos#crearPrincipalDelAlta}): si
+ * falla el contacto, no queda el adulto. Los adultos anteriores, sin esos
+ * datos, siguen funcionando igual.
  *
  * <p><b>Bajas.</b> Desactivar/reactivar son siempre lógicas y no tocan
  * contactos. Desde F4 publican {@link EventoCambioEstadoAdulto} después de
@@ -84,6 +91,8 @@ public class ServicioAdultosMayores {
             "El adulto mayor está inactivo; reactívalo para modificarlo";
 
     private static final String MENSAJE_FECHA_FUTURA = "La fecha de nacimiento no puede ser futura";
+    private static final String MENSAJE_FECHA_OBLIGATORIA = "La fecha de nacimiento es obligatoria.";
+    private static final String MENSAJE_CONTACTO_OBLIGATORIO = "El contacto principal es obligatorio.";
     private static final String MENSAJE_CODIGO_DUPLICADO = "Ya existe un adulto mayor con ese código en el grupo";
     private static final String MENSAJE_YA_INACTIVO = "El adulto mayor ya está inactivo";
     private static final String MENSAJE_YA_ACTIVO = "El adulto mayor ya está activo";
@@ -96,13 +105,16 @@ public class ServicioAdultosMayores {
     private final ServicioAutorizacion servicioAutorizacion;
     private final ServicioCatalogos servicioCatalogos;
     private final ServicioAuditoria servicioAuditoria;
+    private final ServicioContactos servicioContactos;
     private final ApplicationEventPublisher publicadorEventos;
     private final Clock reloj;
 
     public ServicioAdultosMayores(RepositorioAdultoMayor repositorioAdulto,
             RepositorioContactoEmergencia repositorioContacto, RepositorioHistorialAdulto repositorioHistorial,
             ServicioAutorizacion servicioAutorizacion, ServicioCatalogos servicioCatalogos,
-            ServicioAuditoria servicioAuditoria, ApplicationEventPublisher publicadorEventos, Clock reloj) {
+            ServicioAuditoria servicioAuditoria, ServicioContactos servicioContactos,
+            ApplicationEventPublisher publicadorEventos, Clock reloj) {
+        this.servicioContactos = servicioContactos;
         this.repositorioAdulto = repositorioAdulto;
         this.repositorioContacto = repositorioContacto;
         this.repositorioHistorial = repositorioHistorial;
@@ -149,21 +161,30 @@ public class ServicioAdultosMayores {
     }
 
     /**
-     * Crea el perfil del adulto mayor, ACTIVO.
+     * Crea el perfil del adulto mayor, ACTIVO, y su contacto principal, en
+     * la misma transacción. Audita {@code CREAR_ADULTO_MAYOR} y {@code
+     * CREAR_CONTACTO}.
      *
      * @throws ExcepcionAccesoDenegado no es coordinador activo del grupo.
-     * @throws ExcepcionReglaNegocio   la fecha de nacimiento es futura.
+     * @throws ExcepcionReglaNegocio   falta la fecha de nacimiento o es futura, falta el contacto
+     *                                 principal, o su parentesco no es del catálogo.
      * @throws ExcepcionConflicto      ya existe un adulto con ese código en el grupo.
      */
     @Transactional
-    public RespuestaAdultoMayor crear(long idGrupo, SolicitudGuardarAdultoMayor solicitud) {
+    public RespuestaAdultoMayor crear(long idGrupo, SolicitudCrearAdultoMayor solicitud) {
         ContextoGrupo contexto = servicioAutorizacion.exigirCoordinador(idGrupo);
+        SolicitudGuardarAdultoMayor perfil = solicitud.perfil();
+        SolicitudContactoPrincipal datosContacto = solicitud.contactoPrincipal();
 
-        validarFechaNacimiento(solicitud.fechaNacimiento());
-        validarCodigoNoDuplicado(idGrupo, solicitud.codigoInterno(), null);
+        validarFechaNacimiento(perfil.fechaNacimiento());
+        if (datosContacto == null || datosContacto.idParentesco() == null) {
+            throw new ExcepcionReglaNegocio(MENSAJE_CONTACTO_OBLIGATORIO);
+        }
+        validarCodigoNoDuplicado(idGrupo, perfil.codigoInterno(), null);
+        RespuestaOpcion parentesco = servicioContactos.parentescoValido(datosContacto.idParentesco());
 
-        AdultoMayor adulto = new AdultoMayor(idGrupo, solicitud.codigoInterno(), solicitud.nombreCompleto(),
-                solicitud.fechaNacimiento(), solicitud.notasEmergencia(), solicitud.observacionesGenerales(),
+        AdultoMayor adulto = new AdultoMayor(idGrupo, perfil.codigoInterno(), perfil.nombreCompleto(),
+                perfil.fechaNacimiento(), perfil.notasEmergencia(), perfil.observacionesGenerales(),
                 contexto.usuario().getIdUsuario(), idEstadoActivoAdulto(), OffsetDateTime.now(reloj));
         AdultoMayor guardado = repositorioAdulto.save(adulto);
 
@@ -171,7 +192,10 @@ public class ServicioAdultosMayores {
                 String.valueOf(guardado.getIdAdultoMayor()), idGrupo, contexto.usuario().getIdUsuario(), ACCION_CREAR,
                 ResultadoAuditoria.EXITO, detalles(contexto, null)));
 
-        return respuestaConPrincipal(guardado, null);
+        RespuestaContacto principal = servicioContactos.crearPrincipalDelAlta(contexto, idGrupo,
+                guardado.getIdAdultoMayor(), datosContacto, parentesco);
+
+        return RespuestaAdultoMayor.desde(guardado, principal);
     }
 
     /**
@@ -181,7 +205,7 @@ public class ServicioAdultosMayores {
      * @throws ExcepcionAccesoDenegado no es coordinador activo del grupo.
      * @throws ExcepcionNoEncontrado   el adulto no existe o no pertenece al grupo.
      * @throws ExcepcionReglaNegocio   el adulto está inactivo, o la fecha de
-     *                                 nacimiento es futura.
+     *                                 nacimiento falta o es futura.
      * @throws ExcepcionConflicto      ya existe otro adulto con ese código en el grupo.
      */
     @Transactional
@@ -310,9 +334,12 @@ public class ServicioAdultosMayores {
         return adulto;
     }
 
-    /** @throws ExcepcionReglaNegocio {@code fechaNacimiento} es posterior a hoy. */
+    /** @throws ExcepcionReglaNegocio {@code fechaNacimiento} falta o es posterior a hoy. */
     private void validarFechaNacimiento(LocalDate fechaNacimiento) {
-        if (fechaNacimiento != null && fechaNacimiento.isAfter(LocalDate.now(reloj))) {
+        if (fechaNacimiento == null) {
+            throw new ExcepcionReglaNegocio(MENSAJE_FECHA_OBLIGATORIA);
+        }
+        if (fechaNacimiento.isAfter(LocalDate.now(reloj))) {
             throw new ExcepcionReglaNegocio(MENSAJE_FECHA_FUTURA);
         }
     }

@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import cl.adndigital.mejorvejez.comun.ExcepcionCampoInvalido;
 import cl.adndigital.mejorvejez.comun.ExcepcionNoAutenticado;
 import cl.adndigital.mejorvejez.comun.ManejadorErrores;
 import cl.adndigital.mejorvejez.configuracion.ConfiguracionCors;
@@ -91,12 +92,35 @@ class ControladorYoTest {
 
     @Test
     void telefonoInvalidoDevuelve400() throws Exception {
+        when(servicioPerfil.actualizar(any(), eq("Ana"), eq("12345678")))
+                .thenThrow(new ExcepcionCampoInvalido("telefono", "Ingresa un teléfono chileno: +56 y 9 dígitos."));
+
         mockMvc.perform(patch("/api/yo")
                         .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"nombre\": \"Ana\", \"telefono\": \"abc\"}"))
+                        .content("{\"nombre\": \"Ana\", \"telefono\": \"12345678\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errores[0].campo").value("telefono"));
+                .andExpect(jsonPath("$.errores[0].campo").value("telefono"))
+                .andExpect(jsonPath("$.errores[0].mensaje").value("Ingresa un teléfono chileno: +56 y 9 dígitos."));
+    }
+
+    @Test
+    void telefonoValidoLlegaNormalizadoAlServicio() throws Exception {
+        Usuario usuario = mock(Usuario.class);
+        when(usuario.getIdUsuario()).thenReturn(7L);
+        when(usuario.getNombre()).thenReturn("Ana");
+        when(usuario.getEmail()).thenReturn("a@b.cl");
+        when(usuario.getTelefono()).thenReturn("+56912345678");
+        when(usuario.getEsAdministrador()).thenReturn(false);
+        when(servicioUsuarioActual.obtener()).thenReturn(usuario);
+        when(servicioPerfil.actualizar(any(Usuario.class), eq("Ana"), eq("+56912345678"))).thenReturn(usuario);
+
+        mockMvc.perform(patch("/api/yo")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nombre\": \"Ana\", \"telefono\": \"+56 9 1234 5678\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.telefono").value("+56912345678"));
     }
 
     @Test
