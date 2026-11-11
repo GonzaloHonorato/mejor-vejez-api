@@ -143,8 +143,11 @@ public class ServicioAdultosMayores {
         Map<Long, ContactoEmergencia> principales = principalesActivosPorAdultos(
                 adultos.stream().map(AdultoMayor::getIdAdultoMayor).toList());
 
+        Map<Long, String> descripciones = principales.isEmpty() ? Map.of()
+                : servicioContactos.descripcionesParentesco();
+
         return adultos.stream()
-                .map(adulto -> respuestaConPrincipal(adulto, principales.get(adulto.getIdAdultoMayor())))
+                .map(adulto -> respuestaConPrincipal(adulto, principales.get(adulto.getIdAdultoMayor()), descripciones))
                 .toList();
     }
 
@@ -414,8 +417,17 @@ public class ServicioAdultosMayores {
         return principalesActivosPorAdultos(List.of(idAdulto)).get(idAdulto);
     }
 
+    /** Perfil con su contacto principal; consulta el catálogo solo si el principal tiene parentesco. */
     private RespuestaAdultoMayor respuestaConPrincipal(AdultoMayor adulto, ContactoEmergencia principal) {
-        RespuestaContacto respuestaPrincipal = principal == null ? null : RespuestaContacto.desde(principal);
+        boolean conParentesco = principal != null && principal.getIdParentesco() != null;
+        return respuestaConPrincipal(adulto, principal,
+                conParentesco ? servicioContactos.descripcionesParentesco() : Map.of());
+    }
+
+    private RespuestaAdultoMayor respuestaConPrincipal(AdultoMayor adulto, ContactoEmergencia principal,
+            Map<Long, String> descripciones) {
+        RespuestaContacto respuestaPrincipal = principal == null ? null
+                : RespuestaContacto.desde(principal, descripciones);
         return RespuestaAdultoMayor.desde(adulto, respuestaPrincipal);
     }
 

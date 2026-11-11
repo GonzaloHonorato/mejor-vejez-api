@@ -48,9 +48,12 @@ import cl.adndigital.mejorvejez.seguridad.ServicioAutorizacion;
  * de bloquear evita revelar en qué grupo está un adulto ajeno.
  *
  * <p><b>Parentesco.</b> Crear y actualizar exigen una opción del catálogo
- * {@code PARENTESCO}; se guarda su ID y, en {@code PARENTESCO}, su
- * descripción. Los contactos anteriores al catálogo conservan su texto
- * hasta que se editan.
+ * {@code PARENTESCO}; se guarda solo su ID. La descripción de cada
+ * respuesta se resuelve desde el catálogo con una sola consulta por
+ * petición ({@link ServicioCatalogos#descripcionesDeOpciones}), nunca una
+ * por contacto. Un contacto sin {@code ID_PARENTESCO} (antiguo, sin
+ * coincidencia con el catálogo) responde {@code parentesco = null} hasta
+ * que se edita.
  *
  * <p><b>Trazabilidad de administrador.</b> Ver {@link DetallesAuditoria},
  * compartido con {@link ServicioAdultosMayores}.
@@ -121,12 +124,14 @@ public class ServicioContactos {
         buscarAdultoDelGrupo(idGrupo, idAdulto);
 
         long idEstadoActivo = idEstadoActivoContacto();
-        return repositorioContacto.findByIdAdultoMayor(idAdulto).stream()
+        List<ContactoEmergencia> contactos = repositorioContacto.findByIdAdultoMayor(idAdulto);
+        Map<Long, String> descripciones = contactos.isEmpty() ? Map.of() : descripcionesParentesco();
+        return contactos.stream()
                 .sorted(Comparator
                         .<ContactoEmergencia, Boolean>comparing(contacto -> contacto.getIdEstado() != idEstadoActivo)
                         .thenComparing(contacto -> !contacto.isEsPrincipal())
                         .thenComparing(ContactoEmergencia::getNombreContacto))
-                .map(RespuestaContacto::desde)
+                .map(contacto -> RespuestaContacto.desde(contacto, descripciones))
                 .toList();
     }
 
@@ -157,13 +162,13 @@ public class ServicioContactos {
         }
 
         ContactoEmergencia nuevo = new ContactoEmergencia(idAdulto, solicitud.nombreContacto(),
-                parentesco.idOpcion(), parentesco.descripcion(), solicitud.telefono(), seraPrincipal,
-                idEstadoActivoContacto(), contexto.usuario().getIdUsuario(), ahora);
+                parentesco.idOpcion(), solicitud.telefono(), seraPrincipal, idEstadoActivoContacto(),
+                contexto.usuario().getIdUsuario(), ahora);
         ContactoEmergencia guardado = repositorioContacto.save(nuevo);
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_CREAR, null);
 
-        return RespuestaContacto.desde(guardado);
+        return RespuestaContacto.desde(guardado, parentesco.descripcion());
     }
 
     /**
@@ -177,13 +182,13 @@ public class ServicioContactos {
     RespuestaContacto crearPrincipalDelAlta(ContextoGrupo contexto, long idGrupo, long idAdulto,
             SolicitudContactoPrincipal datos, RespuestaOpcion parentesco) {
         ContactoEmergencia nuevo = new ContactoEmergencia(idAdulto, datos.nombre(), parentesco.idOpcion(),
-                parentesco.descripcion(), datos.telefono(), true, idEstadoActivoContacto(),
-                contexto.usuario().getIdUsuario(), OffsetDateTime.now(reloj));
+                datos.telefono(), true, idEstadoActivoContacto(), contexto.usuario().getIdUsuario(),
+                OffsetDateTime.now(reloj));
         ContactoEmergencia guardado = repositorioContacto.save(nuevo);
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_CREAR, null);
 
-        return RespuestaContacto.desde(guardado);
+        return RespuestaContacto.desde(guardado, parentesco.descripcion());
     }
 
     /** @throws ExcepcionReglaNegocio {@code idParentesco} falta o no es una opción del catálogo {@code PARENTESCO}. */
@@ -192,6 +197,11 @@ public class ServicioContactos {
             throw new ExcepcionReglaNegocio(MENSAJE_PARENTESCO_OBLIGATORIO);
         }
         return servicioCatalogos.opcionValida(idParentesco, TipoCatalogo.PARENTESCO, MENSAJE_PARENTESCO_INVALIDO);
+    }
+
+    /** Descripción de cada opción del catálogo {@code PARENTESCO}, por ID, en una sola consulta. */
+    Map<Long, String> descripcionesParentesco() {
+        return servicioCatalogos.descripcionesDeOpciones(TipoCatalogo.PARENTESCO);
     }
 
     /**
@@ -216,17 +226,17 @@ public class ServicioContactos {
 
         List<String> camposModificados = detectarCambios(contacto, solicitud);
         if (camposModificados.isEmpty()) {
-            return RespuestaContacto.desde(contacto);
+            return RespuestaContacto.desde(contacto, parentesco.descripcion());
         }
 
-        contacto.actualizar(solicitud.nombreContacto(), parentesco.idOpcion(), parentesco.descripcion(),
-                solicitud.telefono(), OffsetDateTime.now(reloj));
+        contacto.actualizar(solicitud.nombreContacto(), parentesco.idOpcion(), solicitud.telefono(),
+                OffsetDateTime.now(reloj));
         ContactoEmergencia guardado = repositorioContacto.save(contacto);
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_ACTUALIZAR,
                 Map.of("camposModificados", camposModificados));
 
-        return RespuestaContacto.desde(guardado);
+        return RespuestaContacto.desde(guardado, parentesco.descripcion());
     }
 
     /**
@@ -250,7 +260,7 @@ public class ServicioContactos {
             throw new ExcepcionReglaNegocio(MENSAJE_SOLO_ACTIVO_PRINCIPAL);
         }
         if (contacto.isEsPrincipal()) {
-            return RespuestaContacto.desde(contacto);
+            return respuesta(contacto);
         }
 
         ContactoEmergencia anterior = principalActivoEntre(contactos).orElse(null);
@@ -262,7 +272,7 @@ public class ServicioContactos {
         registrarAuditoria(contexto, idContacto, idGrupo, ACCION_DESIGNAR_PRINCIPAL,
                 Collections.singletonMap("idContactoAnterior", idContactoAnterior));
 
-        return RespuestaContacto.desde(contacto);
+        return respuesta(contacto);
     }
 
     /**
@@ -315,7 +325,7 @@ public class ServicioContactos {
         Map<String, Object> detalles = idNuevoPrincipal == null ? null : Map.of("idNuevoPrincipal", idNuevoPrincipal);
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_DESACTIVAR, detalles);
 
-        return RespuestaContacto.desde(guardado);
+        return respuesta(guardado);
     }
 
     /**
@@ -348,7 +358,7 @@ public class ServicioContactos {
 
         registrarAuditoria(contexto, guardado.getIdContacto(), idGrupo, ACCION_REACTIVAR, null);
 
-        return RespuestaContacto.desde(guardado);
+        return respuesta(guardado);
     }
 
     /**
@@ -386,6 +396,14 @@ public class ServicioContactos {
     }
 
     /** @throws ExcepcionNoEncontrado el adulto no existe o no pertenece al grupo (lectura, sin bloqueo). */
+    /** Respuesta de un solo contacto: consulta el catálogo solo si el contacto tiene parentesco. */
+    private RespuestaContacto respuesta(ContactoEmergencia contacto) {
+        if (contacto.getIdParentesco() == null) {
+            return RespuestaContacto.desde(contacto, (String) null);
+        }
+        return RespuestaContacto.desde(contacto, descripcionesParentesco());
+    }
+
     private AdultoMayor buscarAdultoDelGrupo(long idGrupo, long idAdulto) {
         AdultoMayor adulto = repositorioAdulto.findById(idAdulto)
                 .orElseThrow(() -> new ExcepcionNoEncontrado(ServicioAdultosMayores.MENSAJE_NO_EXISTE));

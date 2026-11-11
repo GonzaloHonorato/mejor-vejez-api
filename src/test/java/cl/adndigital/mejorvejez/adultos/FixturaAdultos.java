@@ -63,16 +63,17 @@ public class FixturaAdultos {
     }
 
     /**
-     * Crea un CONTACTO_EMERGENCIA ACTIVO, no principal, como los anteriores a
-     * V6: parentesco en texto libre y sin {@code ID_PARENTESCO}.
+     * Crea un CONTACTO_EMERGENCIA ACTIVO, no principal, sin {@code
+     * ID_PARENTESCO}, como los contactos anteriores al catálogo cuyo texto
+     * no coincidía con ninguna opción.
      */
-    public long crearContactoConParentescoEnTexto(long idAdulto, long idCreador, String parentesco) {
+    public long crearContactoSinParentesco(long idAdulto, long idCreador) {
         return insertarYObtenerId(
                 "INSERT INTO CONTACTO_EMERGENCIA "
-                        + "(ID_ADULTO_MAYOR, NOMBRE_CONTACTO, PARENTESCO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, "
-                        + "ID_USUARIO_CREADOR) VALUES (?, ?, ?, ?, 'N', ?, ?)",
+                        + "(ID_ADULTO_MAYOR, NOMBRE_CONTACTO, TELEFONO, ES_PRINCIPAL, ID_ESTADO, "
+                        + "ID_USUARIO_CREADOR) VALUES (?, ?, ?, 'N', ?, ?)",
                 "ID_CONTACTO",
-                idAdulto, "Contacto antiguo", parentesco, "+56900000000",
+                idAdulto, "Contacto antiguo", "+56900000000",
                 idEstado("CONTACTO_EMERGENCIA", "ACTIVO"), idCreador);
     }
 

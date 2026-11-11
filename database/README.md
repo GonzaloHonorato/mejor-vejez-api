@@ -15,11 +15,12 @@ El esquema lo crea **Flyway** al arrancar la API, con las migraciones de
 | V4 | `V4__corrige_indice_codigo_adulto.sql` | Reemplaza `UQ_ADULTO_GRUPO_CODIGO` por un índice que no choca con códigos nulos. |
 | V5 | `V5__envios_reporte.sql` | Registro de envíos del reporte semanal (`ENVIO_REPORTE`, `ENVIO_REPORTE_DESTINATARIO`). |
 | V6 | `V6__parentesco_y_contactos.sql` | Catálogo `PARENTESCO` (15 valores, formas femeninas separadas) y `CONTACTO_EMERGENCIA.ID_PARENTESCO` (nula, FK al catálogo); completa el ID de los contactos antiguos cuyo texto coincide. |
+| V7 | `V7__elimina_parentesco_texto.sql` | Elimina `CONTACTO_EMERGENCIA.PARENTESCO` (texto libre): el parentesco queda solo en `ID_PARENTESCO`; los contactos antiguos sin coincidencia quedan sin parentesco. |
 
 Flyway registra lo aplicado en la tabla `flyway_schema_history` y nunca vuelve a
 ejecutar una versión. **No edites una migración ya aplicada:** cualquier cambio
 al esquema va en una nueva (`V4__...sql`). Las pruebas
-(`MigracionesFlywayTest`) aplican las tres migraciones en un Oracle Free limpio
+(`MigracionesFlywayTest`) aplican todas las migraciones en un Oracle Free limpio
 con Testcontainers.
 
 ## Scripts de esta carpeta (manuales, solo desarrollo)

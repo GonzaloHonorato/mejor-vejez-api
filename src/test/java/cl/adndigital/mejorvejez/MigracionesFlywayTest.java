@@ -72,6 +72,18 @@ class MigracionesFlywayTest {
     }
 
     @Test
+    void v7EliminaElParentescoEnTextoLibre() {
+        Integer aplicada = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM \"flyway_schema_history\" WHERE \"version\" = '7' AND \"success\" = 1",
+                Integer.class);
+        List<String> columnas = jdbcTemplate.queryForList(
+                "SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = 'CONTACTO_EMERGENCIA'", String.class);
+
+        assertThat(aplicada).isEqualTo(1);
+        assertThat(columnas).contains("ID_PARENTESCO").doesNotContain("PARENTESCO");
+    }
+
+    @Test
     void creaLosIndicesUnicosPorEstado() {
         List<String> indices = jdbcTemplate.queryForList("SELECT INDEX_NAME FROM USER_INDEXES", String.class);
 

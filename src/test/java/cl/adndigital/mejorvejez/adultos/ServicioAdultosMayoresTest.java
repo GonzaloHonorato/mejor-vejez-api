@@ -2,6 +2,7 @@ package cl.adndigital.mejorvejez.adultos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -462,6 +463,31 @@ class ServicioAdultosMayoresTest {
 
         assertThat(listado).extracting(RespuestaAdultoMayor::idAdultoMayor).containsExactly(idActivo);
         assertThat(listado.get(0).contactoPrincipal().idContacto()).isEqualTo(idContactoPrincipal);
+    }
+
+    @Test
+    void listarYObtenerResuelvenElParentescoDelPrincipalDesdeElCatalogo() {
+        String uid = FixturaGrupos.uidUnico();
+        long idCoordinador = fixturaGrupos.crearUsuario(uid, false);
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idSinParentesco = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        fixturaAdultos.crearContacto(idSinParentesco, idCoordinador, true, "ACTIVO");
+        autenticar(uid);
+        RespuestaAdultoMayor conHijo = servicio.crear(idGrupo, alta(null, "Berta Hijo", NACIMIENTO));
+        RespuestaAdultoMayor conTia = servicio.crear(idGrupo, new SolicitudCrearAdultoMayor(null, "Carmen Tía",
+                NACIMIENTO, null, null,
+                new SolicitudContactoPrincipal("Contacto", fixturaAdultos.idParentesco("TIA"), "+56 9 8765 4321")));
+
+        List<RespuestaAdultoMayor> listado = servicio.listar(idGrupo, false);
+
+        assertThat(listado)
+                .extracting(RespuestaAdultoMayor::idAdultoMayor, adulto -> adulto.contactoPrincipal().parentesco())
+                .containsExactlyInAnyOrder(tuple(idSinParentesco, null), tuple(conHijo.idAdultoMayor(), "Hijo"),
+                        tuple(conTia.idAdultoMayor(), "Tía"));
+        assertThat(servicio.obtener(idGrupo, conTia.idAdultoMayor()).contactoPrincipal().parentesco())
+                .isEqualTo("Tía");
+        assertThat(servicio.obtener(idGrupo, idSinParentesco).contactoPrincipal().parentesco()).isNull();
     }
 
     @Test

@@ -10,9 +10,8 @@ import cl.adndigital.mejorvejez.comun.TelefonoChilenoValido;
 /**
  * Datos para actualizar un contacto de emergencia ({@code PUT
  * .../contactos/{idContacto}}), con las mismas validaciones y normalización
- * que {@link SolicitudCrearContacto}. Un contacto antiguo con el parentesco
- * en texto libre pasa al catálogo al editarlo: {@code idParentesco} es
- * obligatorio.
+ * que {@link SolicitudCrearContacto}. Un contacto antiguo sin parentesco
+ * pasa al catálogo al editarlo: {@code idParentesco} es obligatorio.
  */
 public record SolicitudActualizarContacto(
         @NotBlank(message = "El nombre del contacto es obligatorio.")

@@ -105,6 +105,17 @@ public class ServicioCatalogos {
                 .toList();
     }
 
+    /**
+     * Descripción de cada opción del catálogo {@code tipo} (activas e
+     * inactivas, para resolver también datos guardados con una opción ya
+     * retirada), por {@code idOpcion}. Una sola consulta: sirve para
+     * resolver varias filas sin una consulta por fila.
+     */
+    public Map<Long, String> descripcionesDeOpciones(TipoCatalogo tipo) {
+        return repositorioOpcion.findByTipoCatalogo(tipo).stream()
+                .collect(Collectors.toMap(OpcionCatalogo::getIdOpcion, OpcionCatalogo::getDescripcion));
+    }
+
     private Map<String, Long> cargarCatalogo(String tabla, String campo) {
         return repositorioEstado.findByNombreTablaAndNombreCampo(tabla, campo).stream()
                 .collect(Collectors.toMap(CatalogoEstado::getCodigoEstado, CatalogoEstado::getIdEstado));

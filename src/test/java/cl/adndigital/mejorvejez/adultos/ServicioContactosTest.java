@@ -2,6 +2,7 @@ package cl.adndigital.mejorvejez.adultos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.Instant;
 import java.util.List;
@@ -92,7 +93,7 @@ class ServicioContactosTest {
     }
 
     @Test
-    void crearGuardaElIdYLaDescripcionDelParentesco() {
+    void crearGuardaElIdDelParentescoYDevuelveSuDescripcion() {
         long idCoordinador = crearCoordinadorYAutenticar();
         long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
@@ -104,11 +105,10 @@ class ServicioContactosTest {
 
         assertThat(creado.idParentesco()).isEqualTo(idTio);
         assertThat(creado.parentesco()).isEqualTo("Tío");
-        Map<String, Object> fila = jdbcTemplate.queryForMap(
-                "SELECT ID_PARENTESCO, PARENTESCO FROM CONTACTO_EMERGENCIA WHERE ID_CONTACTO = ?",
+        Long guardado = jdbcTemplate.queryForObject(
+                "SELECT ID_PARENTESCO FROM CONTACTO_EMERGENCIA WHERE ID_CONTACTO = ?", Long.class,
                 creado.idContacto());
-        assertThat(((Number) fila.get("ID_PARENTESCO")).longValue()).isEqualTo(idTio);
-        assertThat(fila.get("PARENTESCO")).isEqualTo("Tío");
+        assertThat(guardado).isEqualTo(idTio);
     }
 
     @Test
@@ -148,16 +148,16 @@ class ServicioContactosTest {
     }
 
     @Test
-    void contactoAntiguoMuestraSuTextoYAlEditarloPasaAlCatalogo() {
+    void contactoSinParentescoDevuelveParentescoNuloYAlEditarloPasaAlCatalogo() {
         long idCoordinador = crearCoordinadorYAutenticar();
         long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
         fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
         long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
-        long idAntiguo = fixturaAdultos.crearContactoConParentescoEnTexto(idAdulto, idCoordinador, "Vecina");
+        long idAntiguo = fixturaAdultos.crearContactoSinParentesco(idAdulto, idCoordinador);
 
         RespuestaContacto listado = servicio.listar(idGrupo, idAdulto).get(0);
         assertThat(listado.idParentesco()).isNull();
-        assertThat(listado.parentesco()).isEqualTo("Vecina");
+        assertThat(listado.parentesco()).isNull();
 
         long idSobrino = fixturaAdultos.idParentesco("SOBRINO");
         RespuestaContacto editado = servicio.actualizar(idGrupo, idAdulto, idAntiguo,
@@ -173,6 +173,40 @@ class ServicioContactosTest {
                 .readValue(detallesJson, new TypeReference<Map<String, Object>>() {
                 });
         assertThat(detalles.get("camposModificados")).isEqualTo(List.of("parentesco"));
+    }
+
+    @Test
+    void listarResuelveLaDescripcionDelCatalogoDeCadaContacto() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Ana", fixturaAdultos.idParentesco("TIA"), "+56912345678", null));
+        servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Bruno", fixturaAdultos.idParentesco("CONYUGE"), "+56912345679", null));
+        fixturaAdultos.crearContactoSinParentesco(idAdulto, idCoordinador);
+
+        List<RespuestaContacto> listado = servicio.listar(idGrupo, idAdulto);
+
+        assertThat(listado).extracting(RespuestaContacto::nombreContacto, RespuestaContacto::parentesco)
+                .containsExactly(tuple("Ana", "Tía"), tuple("Bruno", "Cónyuge"), tuple("Contacto antiguo", null));
+    }
+
+    @Test
+    void designarPrincipalDevuelveLaDescripcionDelParentesco() {
+        long idCoordinador = crearCoordinadorYAutenticar();
+        long idGrupo = fixturaGrupos.crearGrupo(idCoordinador);
+        fixturaGrupos.agregarIntegrante(idGrupo, idCoordinador, "COORDINADOR", "ACTIVO");
+        long idAdulto = fixturaAdultos.crearAdulto(idGrupo, idCoordinador, "ACTIVO");
+        servicio.crear(idGrupo, idAdulto, new SolicitudCrearContacto("Ana", idHijo, "+56912345678", null));
+        RespuestaContacto segundo = servicio.crear(idGrupo, idAdulto,
+                new SolicitudCrearContacto("Bruno", fixturaAdultos.idParentesco("NIETA"), "+56912345679", null));
+        long idSinParentesco = fixturaAdultos.crearContactoSinParentesco(idAdulto, idCoordinador);
+
+        assertThat(servicio.designarPrincipal(idGrupo, idAdulto, segundo.idContacto()).parentesco())
+                .isEqualTo("Nieta");
+        assertThat(servicio.designarPrincipal(idGrupo, idAdulto, idSinParentesco).parentesco()).isNull();
     }
 
     @Test

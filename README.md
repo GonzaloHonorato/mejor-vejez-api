@@ -72,7 +72,7 @@ En la creación de cuentas, un correo que ya existe (en el core o en Firebase) r
     "contactoPrincipal": { "nombre": "Pedro Díaz", "idParentesco": 223, "telefono": "+56 9 1234 5678" } }
   ```
 
-- **Contactos** (`POST`/`PUT .../adultos/{idAdulto}/contactos`): `nombreContacto`, `idParentesco` (opción de `GET /api/catalogos/opciones?tipo=PARENTESCO`) y `telefono`, los tres obligatorios. La respuesta trae `idParentesco` y `parentesco` (la descripción; en contactos anteriores al catálogo, su texto libre e `idParentesco: null`). Un parentesco de otro catálogo → `422` "El parentesco indicado no es válido.".
+- **Contactos** (`POST`/`PUT .../adultos/{idAdulto}/contactos`): `nombreContacto`, `idParentesco` (opción de `GET /api/catalogos/opciones?tipo=PARENTESCO`) y `telefono`, los tres obligatorios. La respuesta trae `idParentesco` y `parentesco` (la descripción, leída del catálogo; solo se guarda el ID). Un contacto antiguo sin parentesco responde `idParentesco: null` y `parentesco: null` hasta que se edita. Un parentesco de otro catálogo → `422` "El parentesco indicado no es válido.".
 - **Teléfono** (contactos, `PATCH /api/yo`, `POST`/`PATCH /api/usuarios` y WhatsApp en `PUT /api/yo/canales`): chileno, `+56` y 9 dígitos, con o sin `+56`, con espacios o guiones (`+56 9 1234 5678`, `912345678`). Se guarda normalizado (`+56912345678`). Si no cumple: `400` con `errores[].mensaje` "Ingresa un teléfono chileno: +56 y 9 dígitos." (en canales, `422` con ese `detail`). En el perfil y en usuarios es opcional.
 
 ### Errores
