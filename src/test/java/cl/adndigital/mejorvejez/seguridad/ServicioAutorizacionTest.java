@@ -126,6 +126,32 @@ class ServicioAutorizacionTest {
         assertThat(contarRechazos("ACCESO_GRUPO", idGrupo, idUsuario)).isEqualTo(1);
     }
 
+    /** CP-05: el rol se resuelve por grupo; ser coordinador en A no da permisos de coordinador en B. */
+    @Test
+    void usuarioEnDosGruposTieneElRolDeCadaGrupo() {
+        String uid = FixturaGrupos.uidUnico();
+        long idUsuario = fixtura.crearUsuario(uid, false);
+        long idGrupoA = fixtura.crearGrupo(idUsuario);
+        fixtura.agregarIntegrante(idGrupoA, idUsuario, "COORDINADOR", "ACTIVO");
+        long idOtro = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);
+        long idGrupoB = fixtura.crearGrupo(idOtro);
+        fixtura.agregarIntegrante(idGrupoB, idOtro, "COORDINADOR", "ACTIVO");
+        fixtura.agregarIntegrante(idGrupoB, idUsuario, "COLABORADOR", "ACTIVO");
+        autenticar(uid);
+
+        assertThat(servicioAutorizacion.exigirCoordinador(idGrupoA).rol()).isEqualTo("COORDINADOR");
+        assertThat(servicioAutorizacion.exigirMiembro(idGrupoB).rol()).isEqualTo("COLABORADOR");
+        assertThatThrownBy(() -> servicioAutorizacion.exigirCoordinador(idGrupoB))
+                .isInstanceOf(ExcepcionAccesoDenegado.class)
+                .hasMessage("Solo un coordinador puede realizar esta acción");
+        assertThat(contarRechazos("ACCESO_GRUPO", idGrupoB, idUsuario)).isEqualTo(1);
+        assertThat(contarRechazos("ACCESO_GRUPO", idGrupoA, idUsuario)).isZero();
+
+        // Las dos membresías siguen activas después de operar en ambos grupos.
+        assertThat(servicioAutorizacion.exigirMiembro(idGrupoA).rol()).isEqualTo("COORDINADOR");
+        assertThat(servicioAutorizacion.exigirMiembro(idGrupoB).rol()).isEqualTo("COLABORADOR");
+    }
+
     @Test
     void administradorSinMembresiaPasaAmbos() {
         long idCreador = fixtura.crearUsuario(FixturaGrupos.uidUnico(), false);

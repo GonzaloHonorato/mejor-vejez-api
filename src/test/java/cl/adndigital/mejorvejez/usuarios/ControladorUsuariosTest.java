@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -146,6 +147,19 @@ class ControladorUsuariosTest {
                         .content("{\"email\":\"ana@correo.cl\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errores[0].campo").value("nombre"));
+    }
+
+    /** CP-02: correo vacío o con formato inválido se rechaza con 400 y no llega a crear la cuenta. */
+    @Test
+    void crearCuentaConCorreoVacioOInvalidoDevuelve400() throws Exception {
+        for (String correo : List.of("", "usuario@", "usuario.ejemplo.com")) {
+            mockMvc.perform(post("/api/usuarios").with(jwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"nombre\":\"Ana\",\"email\":\"" + correo + "\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errores[0].campo").value("email"));
+        }
+        verifyNoInteractions(servicioAltaCuentas);
     }
 
     @Test

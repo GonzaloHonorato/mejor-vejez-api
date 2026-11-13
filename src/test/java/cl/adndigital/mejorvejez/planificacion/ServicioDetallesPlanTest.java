@@ -576,6 +576,9 @@ class ServicioDetallesPlanTest {
         // día que no es un DIA_SEMANA activo (simula un día dado de baja en
         // el catálogo después de guardarse).
         long idDetalle = fixturaPlanes.crearDetalle(e.idPlan, idMedicamento, "ACTIVO");
+        // La fixtura inicia el detalle en TRUNC(SYSDATE) (fecha real); se alinea con el reloj fijo
+        // para que la estimación parta del lunes HOY y no dependa del día en que corre la prueba.
+        jdbcTemplate.update("UPDATE DETALLE_PLAN SET FECHA_INICIO = ? WHERE ID_DETALLE_PLAN = ?", HOY, idDetalle);
         jdbcTemplate.update("INSERT INTO DETALLE_PLAN_DIA (ID_DETALLE_PLAN, ID_DIA_SEMANA) VALUES (?, ?)",
                 idDetalle, opcion("UNIDAD_DOSIS", "ML"));
 

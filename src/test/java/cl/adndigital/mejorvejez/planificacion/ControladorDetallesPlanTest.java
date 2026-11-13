@@ -104,6 +104,18 @@ class ControladorDetallesPlanTest {
         verifyNoInteractions(servicio);
     }
 
+    /** CP-12: dosis negativa, con más de 3 decimales o ausente también se rechaza con 400. */
+    @Test
+    void dosisNegativaConDemasiadosDecimalesOAusenteDevuelve400() throws Exception {
+        for (String dosis : List.of("\"dosisCantidad\":-1,", "\"dosisCantidad\":0.0001,", "")) {
+            mockMvc.perform(post(URL).with(jwt()).contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpo(HORARIO_VALIDO, dosis)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errores[0].campo").value("dosisCantidad"));
+        }
+        verifyNoInteractions(servicio);
+    }
+
     @Test
     void modoDeTerminoDesconocidoDevuelve400() throws Exception {
         mockMvc.perform(post(URL).with(jwt()).contentType(MediaType.APPLICATION_JSON)
