@@ -174,7 +174,7 @@ base64 -i Wallet_MEJORVEJEZ.zip | tr -d '\n' | pbcopy
    CLAVE_SERVICIO=<la clave compartida> ./mvnw spring-boot:run   # http://localhost:8080/api/salud
    ```
 
-   Flyway crea el esquema (migraciones V1–V7) en el Oracle local al arrancar.
+   Flyway crea el esquema (migraciones V1–V8) en el Oracle local al arrancar.
 
    **Correo y reportes (Fase 9):** este core ya no envía correos ni genera
    PDFs. Para probar la detección de atrasos, las alertas preventivas o el
@@ -222,7 +222,7 @@ App de tipo **Compose** apuntando a este repo, archivo `docker-compose.yml`.
 3. Deploy. Verificar: `curl https://mejor-vejez-api.adndigital.cl/api/salud`.
 
 > En producción desde el 11-11-2026 (Oracle Autonomous Database, migraciones
-> V1–V7). Autonomous trae objetos propios en el esquema `ADMIN` (los jobs
+> V1–V8). Autonomous trae objetos propios en el esquema `ADMIN` (los jobs
 > `PIPELINE$1` y `PIPELINE$2`), así que Flyway arranca con
 > `baseline-on-migrate=true` y `baseline-version=0`: sin eso ve el esquema "no
 > vacío" y no levanta. Solo actúa si todavía no existe el historial de Flyway.

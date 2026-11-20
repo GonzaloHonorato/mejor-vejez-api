@@ -99,11 +99,13 @@ class FixturaGeneracion {
         long idPresentacion = idOpcion("PRESENTACION_MEDICAMENTO", "COMPRIMIDO");
         long idUnidad = idOpcion("UNIDAD_DOSIS", datos.unidad);
         long idDetalle = insertarYObtenerId(
-                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
-                        + "CONCENTRACION, INSTRUCCIONES, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, FECHA_FIN, "
-                        + "ID_RESPONSABLE_PREDETERMINADO, ID_ESTADO) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, "
+                        + "ID_PRESENTACION, CONCENTRACION, INSTRUCCIONES, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, "
+                        + "FECHA_FIN, ID_RESPONSABLE_PREDETERMINADO, ID_ESTADO) VALUES (?, (SELECT ID_ADULTO_MAYOR FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "(SELECT ID_GRUPO FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 "ID_DETALLE_PLAN",
-                e.idPlan(), idMedicamento, datos.nombre, idPresentacion, datos.concentracion, datos.instrucciones,
+                e.idPlan(), e.idPlan(), e.idPlan(), idMedicamento, datos.nombre, idPresentacion, datos.concentracion, datos.instrucciones,
                 datos.dosis, idUnidad, datos.fechaInicio, datos.fechaFin, datos.idResponsable,
                 idEstado("DETALLE_PLAN", "ACTIVO"));
         for (String dia : datos.dias) {

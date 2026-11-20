@@ -38,6 +38,9 @@ import lombok.NoArgsConstructor;
  * lee); la BD exige además segundos en 0 ({@code CK_PLAN_HORARIO_SOLO_HORA}).
  * Estado en el catálogo {@code DETALLE_PLAN.ESTADO} (ACTIVO / INACTIVO); la
  * baja es siempre lógica y no toca el plan ni los demás detalles.
+ * {@code ID_ADULTO_MAYOR} e {@code ID_GRUPO} son copia de los del plan (V8):
+ * son el destino de las FK compuestas de tareas, ocurrencias y alertas, que
+ * así no pueden apuntar al detalle de otro adulto mayor o grupo.
  */
 @Entity
 @Table(name = "DETALLE_PLAN")
@@ -55,6 +58,12 @@ public class DetallePlan {
 
     @Column(name = "ID_PLAN", nullable = false)
     private Long idPlan;
+
+    @Column(name = "ID_ADULTO_MAYOR", nullable = false, updatable = false)
+    private Long idAdultoMayor;
+
+    @Column(name = "ID_GRUPO", nullable = false, updatable = false)
+    private Long idGrupo;
 
     @Column(name = "ID_MEDICAMENTO", nullable = false)
     private Long idMedicamento;
@@ -133,13 +142,19 @@ public class DetallePlan {
     @BatchSize(size = 50)
     private Set<LocalDateTime> horasAdministracion = new HashSet<>();
 
-    /** Detalle nuevo del plan indicado ({@code POST .../planes/{idPlan}/detalles}), sin días ni horas todavía. */
-    public DetallePlan(long idPlan, long idMedicamento, String nombreMedicamento, long idPresentacion,
+    /**
+     * Detalle nuevo del plan indicado ({@code POST .../planes/{idPlan}/detalles}),
+     * sin días ni horas todavía. El plan, el adulto mayor y el grupo salen del
+     * mismo {@link PlanMedicamentos}.
+     */
+    public DetallePlan(PlanMedicamentos plan, long idMedicamento, String nombreMedicamento, long idPresentacion,
             String concentracion, String instrucciones, BigDecimal dosisCantidad, long idUnidadDosis,
             BigDecimal cantidadInicial, BigDecimal cantidadDisponible, String modoCalculoTermino,
             LocalDate fechaEstimadaTermino, LocalDate fechaInicio, LocalDate fechaFin,
             Long idResponsablePredeterminado, long idEstado, OffsetDateTime fechaCreacion) {
-        this.idPlan = idPlan;
+        this.idPlan = plan.getIdPlan();
+        this.idAdultoMayor = plan.getIdAdultoMayor();
+        this.idGrupo = plan.getIdGrupo();
         this.idMedicamento = idMedicamento;
         this.nombreMedicamento = nombreMedicamento;
         this.idPresentacion = idPresentacion;

@@ -79,11 +79,12 @@ public class FixturaPlanes {
         long idPresentacion = idOpcion("PRESENTACION_MEDICAMENTO", "COMPRIMIDO");
         long idUnidadDosis = idOpcion("UNIDAD_DOSIS", "COMPRIMIDO");
         long idDetalle = insertarYObtenerId(
-                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
-                        + "DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) "
-                        + "VALUES (?, ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?)",
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, "
+                        + "ID_PRESENTACION, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) "
+                        + "VALUES (?, (SELECT ID_ADULTO_MAYOR FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "(SELECT ID_GRUPO FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?)",
                 "ID_DETALLE_PLAN",
-                idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, idUnidadDosis,
+                idPlan, idPlan, idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, idUnidadDosis,
                 idEstado("DETALLE_PLAN", estado));
 
         long idLunes = idOpcion("DIA_SEMANA", "LUNES");
@@ -108,11 +109,12 @@ public class FixturaPlanes {
         long idPresentacion = idOpcion("PRESENTACION_MEDICAMENTO", "COMPRIMIDO");
         long idUnidadDosis = idOpcion("UNIDAD_DOSIS", "COMPRIMIDO");
         long idDetalle = insertarYObtenerId(
-                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
-                        + "DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, FECHA_ESTIMADA_TERMINO, ID_ESTADO) "
-                        + "VALUES (?, ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?, ?)",
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, "
+                        + "ID_PRESENTACION, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, FECHA_ESTIMADA_TERMINO, ID_ESTADO) "
+                        + "VALUES (?, (SELECT ID_ADULTO_MAYOR FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "(SELECT ID_GRUPO FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?, ?)",
                 "ID_DETALLE_PLAN",
-                idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, idUnidadDosis, fechaEstimadaTermino,
+                idPlan, idPlan, idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, idUnidadDosis, fechaEstimadaTermino,
                 idEstado("DETALLE_PLAN", "ACTIVO"));
 
         long idLunes = idOpcion("DIA_SEMANA", "LUNES");

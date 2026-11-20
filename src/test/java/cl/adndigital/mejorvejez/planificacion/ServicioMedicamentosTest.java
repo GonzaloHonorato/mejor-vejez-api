@@ -304,9 +304,11 @@ class ServicioMedicamentosTest {
                 "ID_PLAN", idGrupo, idAdulto, "Plan fixtura", idEstadoPlanActivo,
                 java.sql.Date.valueOf(LocalDate.now()), idCreador);
         insertarYObtenerId(
-                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
-                        + "DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                "ID_DETALLE_PLAN", idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, 1,
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, "
+                        + "ID_PRESENTACION, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) "
+                        + "VALUES (?, (SELECT ID_ADULTO_MAYOR FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "(SELECT ID_GRUPO FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), ?, ?, ?, ?, ?, ?, ?)",
+                "ID_DETALLE_PLAN", idPlan, idPlan, idPlan, idMedicamento, "Medicamento fixtura", idPresentacion, 1,
                 idUnidadDosis, java.sql.Date.valueOf(LocalDate.now()), idEstadoDetalleActivo);
     }
 

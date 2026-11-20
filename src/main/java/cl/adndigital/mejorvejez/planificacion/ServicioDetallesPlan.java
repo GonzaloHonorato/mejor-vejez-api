@@ -150,7 +150,7 @@ public class ServicioDetallesPlan {
         DatosValidados datos = validar(idGrupo, plan, solicitud);
 
         OffsetDateTime ahora = OffsetDateTime.now(reloj);
-        DetallePlan detalle = new DetallePlan(idPlan, medicamento.getIdMedicamento(), medicamento.getNombre(),
+        DetallePlan detalle = new DetallePlan(plan, medicamento.getIdMedicamento(), medicamento.getNombre(),
                 solicitud.idPresentacion(), solicitud.concentracion(), solicitud.instrucciones(),
                 solicitud.dosisCantidad(), solicitud.idUnidadDosis(), solicitud.cantidadInicial(),
                 solicitud.cantidadDisponible(), solicitud.modoCalculoTermino(), datos.fechaEstimadaTermino(),

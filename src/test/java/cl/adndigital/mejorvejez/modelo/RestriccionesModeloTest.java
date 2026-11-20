@@ -122,6 +122,80 @@ class RestriccionesModeloTest {
                 idGrupoB, idAdultoDeGrupoA, "Tarea con adulto de otro grupo", idEstadoPendiente));
     }
 
+    /*
+     * V8: tareas, ocurrencias y alertas que apuntan a un detalle de plan o a
+     * una tarea deben ser del mismo adulto mayor y grupo. Ana y Pedro son del
+     * mismo grupo, así que estas pruebas cubren el cruce entre adultos, que
+     * las FK (ID_ADULTO_MAYOR, ID_GRUPO) hacia ADULTO_MAYOR no detectan.
+     */
+
+    @Test
+    void detalleNoAceptaAdultoDistintoDelDeSuPlan() {
+        long idUsuario = fixtura.crearUsuario("uid-detalle-cruzado");
+        long idGrupo = fixtura.crearGrupo(idUsuario);
+        long idAna = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idPedro = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idDetalleDeAna = crearDetallePlan(idGrupo, idAna, idUsuario);
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                "UPDATE DETALLE_PLAN SET ID_ADULTO_MAYOR = ? WHERE ID_DETALLE_PLAN = ?", idPedro, idDetalleDeAna));
+    }
+
+    @Test
+    void tareaNoAceptaDetalleDeOtroAdulto() {
+        long idUsuario = fixtura.crearUsuario("uid-tarea-detalle-cruzado");
+        long idGrupo = fixtura.crearGrupo(idUsuario);
+        long idAna = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idPedro = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idDetalleDePedro = crearDetallePlan(idGrupo, idPedro, idUsuario);
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> crearTareaMedicamento("DET-CRUZADO-ANA", idGrupo, idAna, idDetalleDePedro));
+
+        assertThat(crearTareaMedicamento("DET-PROPIO-PEDRO", idGrupo, idPedro, idDetalleDePedro)).isPositive();
+    }
+
+    @Test
+    void ocurrenciaNoAceptaDetalleNiTareaDeOtroAdulto() {
+        long idUsuario = fixtura.crearUsuario("uid-ocurrencia-cruzada");
+        long idGrupo = fixtura.crearGrupo(idUsuario);
+        long idAna = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idPedro = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idDetalleDeAna = crearDetallePlan(idGrupo, idAna, idUsuario);
+        long idDetalleDePedro = crearDetallePlan(idGrupo, idPedro, idUsuario);
+        long idTareaDePedro = crearTareaMedicamento("OCU-TAREA-PEDRO", idGrupo, idPedro, idDetalleDePedro);
+        long idEstado = fixtura.idEstado("OCURRENCIA_PLANIFICADA", "ESTADO", "PLANIFICADA");
+        String sql = "INSERT INTO OCURRENCIA_PLANIFICADA (ID_DETALLE_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, "
+                + "FECHA_HORARIO, CLAVE_OCURRENCIA, ID_ESTADO, ID_TAREA) VALUES (?, ?, ?, SYSTIMESTAMP, ?, ?, ?)";
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                sql, idDetalleDePedro, idAna, idGrupo, "OCU-DETALLE-CRUZADO", idEstado, null));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                sql, idDetalleDeAna, idAna, idGrupo, "OCU-TAREA-CRUZADA", idEstado, idTareaDePedro));
+    }
+
+    @Test
+    void alertaNoAceptaTareaNiDetalleDeOtroAdulto() {
+        long idUsuario = fixtura.crearUsuario("uid-alerta-cruzada");
+        long idGrupo = fixtura.crearGrupo(idUsuario);
+        long idAna = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idPedro = fixtura.crearAdulto(idGrupo, idUsuario);
+        long idTareaDePedro = fixtura.crearTareaManual(idGrupo, idPedro);
+        long idDetalleDePedro = crearDetallePlan(idGrupo, idPedro, idUsuario);
+        long idEstado = fixtura.idEstado("ALERTA_CUIDADO", "ESTADO", "ABIERTA");
+        String sql = "INSERT INTO ALERTA_CUIDADO (CLAVE_ALERTA, TIPO_ALERTA, ID_TAREA, ID_DETALLE_PLAN, ID_GRUPO, "
+                + "ID_ADULTO_MAYOR, MENSAJE_ALERTA, ID_ESTADO) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(sql,
+                "ATR-CRUZADA", "ATRASO_TAREA", idTareaDePedro, null, idGrupo, idAna, "Alerta cruzada", idEstado));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(sql,
+                "REP-CRUZADA", "REPOSICION_MEDICAMENTO", null, idDetalleDePedro, idGrupo, idAna, "Alerta cruzada",
+                idEstado));
+
+        jdbcTemplate.update(sql, "ATR-PROPIA", "ATRASO_TAREA", idTareaDePedro, null, idGrupo, idPedro,
+                "Alerta propia", idEstado);
+    }
+
     @Test
     void medicamentoDuplicadoNormalizadoSeRechaza() {
         fixtura.crearMedicamento("Losartán", "50 mg");
@@ -256,12 +330,33 @@ class RestriccionesModeloTest {
         return jdbcTemplate.queryForObject("SELECT MAX(ID_EVENTO_AUDITORIA) FROM EVENTO_AUDITORIA", Long.class);
     }
 
+    private long crearTareaMedicamento(String clave, long idGrupo, long idAdulto, long idDetalle) {
+        KeyHolder llave = new GeneratedKeyHolder();
+        jdbcTemplate.update(conexion -> {
+            PreparedStatement sentencia = conexion.prepareStatement(
+                    "INSERT INTO TAREA_CUIDADO (TIPO_TAREA, CLAVE_OCURRENCIA, ID_GRUPO, ID_ADULTO_MAYOR, "
+                            + "ID_DETALLE_PLAN, TITULO_TAREA, FECHA_HORARIO, ID_ESTADO) "
+                            + "VALUES ('MEDICAMENTOS', ?, ?, ?, ?, ?, SYSTIMESTAMP, ?)",
+                    new String[] {"ID_TAREA"});
+            sentencia.setString(1, clave);
+            sentencia.setLong(2, idGrupo);
+            sentencia.setLong(3, idAdulto);
+            sentencia.setLong(4, idDetalle);
+            sentencia.setString(5, "Tarea de medicamento");
+            sentencia.setLong(6, fixtura.idEstado("TAREA_CUIDADO", "ESTADO", "PENDIENTE"));
+            return sentencia;
+        }, llave);
+        return llave.getKey().longValue();
+    }
+
     private long crearDetallePlan(long idGrupo, long idAdulto, long idUsuario) {
         long idEstadoPlanActivo = fixtura.idEstado("PLAN_MEDICAMENTOS", "ESTADO", "ACTIVO");
         long idEstadoDetalleActivo = fixtura.idEstado("DETALLE_PLAN", "ESTADO", "ACTIVO");
         long idPresentacion = fixtura.idOpcion("PRESENTACION_MEDICAMENTO", "COMPRIMIDO");
         long idUnidadDosis = fixtura.idOpcion("UNIDAD_DOSIS", "COMPRIMIDO");
-        long idMedicamento = fixtura.crearMedicamento("Medicamento fixtura horario", "100 mg");
+        // Un medicamento por adulto: dos detalles en la misma prueba no chocan en UX_MEDICAMENTO_NORMALIZADO.
+        String nombreMedicamento = "Medicamento fixtura horario " + idAdulto;
+        long idMedicamento = fixtura.crearMedicamento(nombreMedicamento, "100 mg");
 
         jdbcTemplate.update(
                 "INSERT INTO PLAN_MEDICAMENTOS (ID_GRUPO, ID_ADULTO_MAYOR, NOMBRE_PLAN, ID_ESTADO, "
@@ -271,10 +366,11 @@ class RestriccionesModeloTest {
                 "SELECT MAX(ID_PLAN) FROM PLAN_MEDICAMENTOS WHERE ID_GRUPO = ?", Long.class, idGrupo);
 
         jdbcTemplate.update(
-                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, ID_PRESENTACION, "
-                        + "DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) "
-                        + "VALUES (?, ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?)",
-                idPlan, idMedicamento, "Medicamento fixtura horario", idPresentacion, idUnidadDosis,
+                "INSERT INTO DETALLE_PLAN (ID_PLAN, ID_ADULTO_MAYOR, ID_GRUPO, ID_MEDICAMENTO, NOMBRE_MEDICAMENTO, "
+                        + "ID_PRESENTACION, DOSIS_CANTIDAD, ID_UNIDAD_DOSIS, FECHA_INICIO, ID_ESTADO) "
+                        + "VALUES (?, (SELECT ID_ADULTO_MAYOR FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), "
+                        + "(SELECT ID_GRUPO FROM PLAN_MEDICAMENTOS WHERE ID_PLAN = ?), ?, ?, ?, 1, ?, TRUNC(SYSDATE), ?)",
+                idPlan, idPlan, idPlan, idMedicamento, nombreMedicamento, idPresentacion, idUnidadDosis,
                 idEstadoDetalleActivo);
         return jdbcTemplate.queryForObject(
                 "SELECT MAX(ID_DETALLE_PLAN) FROM DETALLE_PLAN WHERE ID_PLAN = ?", Long.class, idPlan);
